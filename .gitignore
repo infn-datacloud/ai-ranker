@@ -1,0 +1,10 @@
+# VSCode and other IDEs
+**/.vscode/**
+!**/.vscode/launch.json
+
+# Python Build
+**/__pycache__
+**/*.pyc
+
+.DS_Store
+.env
