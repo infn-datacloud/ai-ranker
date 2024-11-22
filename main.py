@@ -67,11 +67,14 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
 
     file["cpu_diff"] = (file["quota_cores"] - file["vcpus"]) - file["requested_cpu"]
     file["ram_diff"] = (file["quota_ram"] - file["ram"]) - file["requested_ram"]
-    file["storage_diff"] = (file["quota_archived"] - file["archived"]) - file["requested_storage"] # qui è corretto usare requested_storage in cambinazione con archived?
-    file["instances_diff"] = (file["quota_instances"] - file["instances"]) - file["requested_nodes"] # qui è corretto usare requested_nodes?
-    file["volumes_diff"] = (file["quota_volumes"] - file["volumes"]) - file["requested_volumes"] # qua mancano i volumi richiesti
-    file["floatingips_diff"] = (file["quota_floatingips"] - file["floatingips"]) # qua mancano i floating ips richiesti
+    file["storage_diff"] = (file["quota_archived"] - file["archived"]) - file["requested_storage"]
+    file["instances_diff"] = (file["quota_instances"] - file["instances"]) - file["requested_nodes"]
+    file["volumes_diff"] = (file["quota_volumes"] - file["volumes"]) - file["requested_volumes"]
+    file["floatingips_diff"] = (file["quota_floatingips"] - file["floatingips"])
     return file[finalKeys]
+
+def kfold_cross_validation(models, model_params, kfolds):
+    return
 
 def train_model(model_type: str, model_params: dict, experiment_name: str = "Default"):
     """
@@ -151,5 +154,11 @@ if __name__ == "__main__":
     #Set the mlflow server uri
     mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
 
-    # Train the model
-    train_model(settings.MODEL_TYPE, settings.MODEL_PARAMS, settings.EXPERIMENT_NAME)
+    model_params = json.loads(settings.MODELS_PARAMS)
+
+    if len(settings.MODELS) == 1:
+        # Train the model chosen by the user
+        train_model(settings.MODELS[0], model_params[settings.MODELS[0]], settings.EXPERIMENT_NAME)
+    else:
+        # Perform KFold cross validation
+        kfold_cross_validation(settings.MODELS, model_params, settings.KFOLDS)

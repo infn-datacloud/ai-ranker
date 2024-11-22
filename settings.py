@@ -15,22 +15,32 @@ class MLflowSettings(BaseSettings):
         default="Default",
         description="Name of the MLFlow experiment."
     )
-    MODEL_TYPE: str = Field(
-        default="RandomForestClassifier",
-        description="The type of ML model to train."
+    MODELS: list = Field(
+        default=["RandomForestClassifier"],
+        description="The list of ML models to compare."
     )
-    MODEL_PARAMS: str = Field(
-        default="{}",
-        description="Parameters to be passed to the model as a JSON string."
+    MODELS_PARAMS: str = Field(
+        default="",
+        description="Parameters to be passed to the models as a JSON string."
+    )
+    KFOLDS: int = Field(
+        default=5,
+        description="Number of folds for the KFold cross validation."
     )
 
-    @field_validator("MODEL_PARAMS")
-    def parse_model_params(cls, value):
-        try:
-            # convert the string into a dictionary
-            return json.loads(value)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Error in MODEL_PARAMS parsing: {e}")
+    @field_validator("MODELS_PARAMS", mode="before")
+    def parse_models_params(cls, value):
+        # Verify that the content is a dictionary
+        if isinstance(value, dict):
+            try:
+                parsed_value = json.loads(value)
+                # Check if MODELS_PARAMS is a dictionary of dictionaries
+                if not all(isinstance(v, dict) for v in parsed_value.values()):
+                    raise ValueError("MODELS_PARAMS should be a dictionary of dictionaries.")
+                return parsed_value
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Error in MODELS_PARAMS parsing: {e}")
+        return value
         
     class Config:
         env_file = ".env"  # Set variables from env files
