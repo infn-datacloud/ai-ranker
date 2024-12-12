@@ -15,20 +15,28 @@ class MLflowSettings(BaseSettings):
         default="Default",
         description="Name of the MLFlow experiment."
     )
-    MODELS: list = Field(
+    CLASSIFICATION_MODELS: list = Field(
         default=["RandomForestClassifier"],
-        description="The list of ML models to compare."
+        description="The list of ML models of type classification to compare."
     )
-    MODELS_PARAMS: str = Field(
+    CLASSIFICATION_MODELS_PARAMS: str = Field(
         default="",
-        description="Parameters to be passed to the models as a JSON string."
+        description="Parameters to be passed to the classification models as a JSON string."
+    )
+    REGRESSION_MODELS: list = Field(
+        default=["RandomForestRegressor"],
+        description="The list of ML models of type regression to compare."
+    )
+    REGRESSION_MODELS_PARAMS: str = Field(
+        default="",
+        description="Parameters to be passed to the regression models as a JSON string."
     )
     KFOLDS: int = Field(
         default=5,
         description="Number of folds for the KFold cross validation."
     )
 
-    @field_validator("MODELS_PARAMS", mode="before")
+    @field_validator("CLASSIFICATION_MODELS_PARAMS", "REGRESSION_MODELS_PARAMS", mode="before")
     def parse_models_params(cls, value):
         # Verify that the content is a dictionary
         if isinstance(value, dict):
@@ -36,10 +44,10 @@ class MLflowSettings(BaseSettings):
                 parsed_value = json.loads(value)
                 # Check if MODELS_PARAMS is a dictionary of dictionaries
                 if not all(isinstance(v, dict) for v in parsed_value.values()):
-                    raise ValueError("MODELS_PARAMS should be a dictionary of dictionaries.")
+                    raise ValueError("CLASSIFICATION_MODELS_PARAMS should be a dictionary of dictionaries.")
                 return parsed_value
             except json.JSONDecodeError as e:
-                raise ValueError(f"Error in MODELS_PARAMS parsing: {e}")
+                raise ValueError(f"Error in CLASSIFICATION_MODELS_PARAMS parsing: {e}")
         return value
         
     class Config:

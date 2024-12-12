@@ -2,10 +2,12 @@ import sys
 import json
 import mlflow
 import mlflow.sklearn
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 from settings import load_mlflow_settings
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error, roc_auc_score, r2_score
 from sklearn.utils import all_estimators
 from sklearn.base import ClassifierMixin, RegressorMixin
 from mlflow.models import infer_signature
@@ -76,7 +78,7 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
 def kfold_cross_validation(models, model_params, kfolds):
     return
 
-def train_model(model_type: str, model_params: dict, experiment_name: str = "Default"):
+def train_model_classification(model_type: str, model_params: dict, file):
     """
     Function to train a generic sklearn ML model
 
@@ -84,22 +86,10 @@ def train_model(model_type: str, model_params: dict, experiment_name: str = "Def
     :param model_params: Parameters to pass to the model as a dictionary.
     :param experiment_name: Name of the MLFlow experiment
     """
-    # Set the MLFlow experiment
-    mlflow.set_experiment(experiment_name)
-    
-    # Get all sklearn models (both classifiers and regressors)
-    estimators = dict(all_estimators())
-    
-    if model_type not in estimators:
-        print(f"Error: the model '{model_type}' is not available in scikit-learn.")
-        return
 
-    # Load the dataset (here the Iris example)
-    file = preprocess_dataset("fullDataset.csv", all)
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
-
     # Load the model dinamically
-    ModelClass = estimators[model_type]
+    ModelClass = dict(all_estimators())[model_type]
 
     # Create the model with the requested parameters
     try:
@@ -110,7 +100,7 @@ def train_model(model_type: str, model_params: dict, experiment_name: str = "Def
 
     # Train the model
     model.fit(X_train, y_train)
-    
+
     # Do predictions
     y_pred = model.predict(X_test)
 
@@ -147,18 +137,98 @@ def train_model(model_type: str, model_params: dict, experiment_name: str = "Def
 
     print(f"Model {model_type} successfully logged on MLflow.")
 
-if __name__ == "__main__":
+def train_model_regression(model_type: str, model_params: dict, file):
+
+    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
+    # Load the model dinamically
+    ModelClass = dict(all_estimators())[model_type]
+
+    # Create the model with the requested parameters
+    try:
+        model = ModelClass(**model_params)
+    except TypeError as e:
+        print(f"Error in the creation of the model: {e}")
+        return
+
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train the model
+    model.fit(X_train_scaled, y_train)
+
+    # Do predictions
+    y_train_pred = model.predict(X_train_scaled)
+    y_test_pred = model.predict(X_test_scaled)
+
+    # Compute the metrics
+    metrics = {
+        "MSE_train": mean_squared_error(y_train, y_train_pred),
+        "MSE_test": mean_squared_error(y_test, y_test_pred),
+        "RMSE_train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        "RMSE_test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        "MAE_train": mean_absolute_error(y_train, y_train_pred),
+        "MAE_test": mean_absolute_error(y_test, y_test_pred),
+        "R2_train": r2_score(y_train, y_train_pred),
+        "R2_test": r2_score(y_test, y_test_pred),
+    }
+    # Log the metrics
+    for metric, value in metrics.items():
+        mlflow.log_metric(metric, value)
+
+    # Log parameters
+    mlflow.log_param("model", "RandomForestRegressor")
+    mlflow.log_param("scaling", "MinMaxScaler (-1, 1)")
+    mlflow.log_param("test_size", 0.2)
+
+    # Log del modello
+    mlflow.sklearn.log_model(model, "model")
+    print("Modello logged on MLflow.")
+
+    # Print the metrics
+    for metric, value in metrics.items():
+        print(f"{metric}: {value}")
+
+def setup_mlflow():
     settings = load_mlflow_settings()
     print(settings)
-
     #Set the mlflow server uri
     mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
 
-    model_params = json.loads(settings.MODELS_PARAMS)
+    # Set the MLFlow experiment
+    mlflow.set_experiment(settings.EXPERIMENT_NAME)
 
-    if len(settings.MODELS) == 1:
+    # Get all sklearn models (both classifiers and regressors)
+    estimators = dict(all_estimators())
+
+    for model in settings.CLASSIFICATION_MODELS + settings.REGRESSION_MODELS:
+        if model not in estimators:
+            print(f"Error: the model '{model}' is not available in scikit-learn.")
+            return
+        else:
+            print(model)
+
+    return settings
+
+if __name__ == "__main__":
+
+    settings = setup_mlflow()
+    classification_model_params = json.loads(settings.CLASSIFICATION_MODELS_PARAMS)
+    regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
+
+    # Load the dataset (here the Iris example)
+    file = preprocess_dataset("fullDataset.csv", all)
+
+    if len(settings.CLASSIFICATION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model(settings.MODELS[0], model_params[settings.MODELS[0]], settings.EXPERIMENT_NAME)
+        train_model_classification(settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]], file)
     else:
         # Perform KFold cross validation
-        kfold_cross_validation(settings.MODELS, model_params, settings.KFOLDS)
+        kfold_cross_validation(settings.CLASSIFICATION_MODELS, classification_model_params, settings.KFOLDS)
+
+    if len(settings.REGRESSION_MODELS) == 1:
+        # Train the model chosen by the user
+        train_model_regression(settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]], file)
+    else:
+        # Perform KFold cross validation
+        kfold_cross_validation(settings.REGRESSION_MODELS, regression_model_params, settings.KFOLDS)
