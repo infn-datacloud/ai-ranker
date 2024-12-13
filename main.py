@@ -11,6 +11,7 @@ from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_er
 from sklearn.utils import all_estimators
 from sklearn.base import ClassifierMixin, RegressorMixin
 from mlflow.models import infer_signature
+from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix
 import pandas as pd
 from kafka import KafkaConsumer
@@ -75,10 +76,45 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
     file["floatingips_diff"] = (file["quota_floatingips"] - file["floatingips"])
     return file[finalKeys]
 
-def kfold_cross_validation(models, model_params, kfolds):
-    return
+def kfold_cross_validation(X_train, X_test, y_train, y_test, models_params, n_splits=5, scoring="accuracy"):
+    X = X_train
+    y = y_train
 
-def train_model_classification(model_type: str, model_params: dict, file):
+    # Initialize KFold
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    # Dictionary to store scores
+    model_scores = {}
+    mean_scores = {}
+    # Get all estimators
+    all_models = dict(all_estimators())
+
+    for model_name, params in models_params.items():
+        # Fetch the model class
+        ModelClass = all_models.get(model_name)
+        if ModelClass is None:
+            raise ValueError(f"Model {model_name} not found in sklearn estimators.")
+
+        # Instantiate the model with parameters
+        model = ModelClass(**params)
+
+        # Perform cross-validation
+        scores = cross_val_score(model, X, y.values.ravel(), cv=kf, scoring=scoring)
+
+        # Store the scores in the dictionary
+        model_scores[model_name] = scores
+        mean_scores[model_name] = np.mean(scores)
+        print(f"Model: {model_name}, Mean {scoring}: {np.mean(scores):.4f}, Std: {np.std(scores):.4f}")
+    best_model_name = max(mean_scores, key=mean_scores.get)
+    print(f"Model selected for training: {best_model_name}")
+    if issubclass(all_models.get(best_model_name), ClassifierMixin):
+        train_model_classification(X_train, X_test, y_train, y_test, best_model_name, models_params[best_model_name])
+    elif issubclass(all_models.get(best_model_name), RegressorMixin):
+        train_model_regression(X_train, X_test, y_train, y_test, best_model_name, models_params[best_model_name])
+
+    return model_scores
+
+def train_model_classification(X_train, X_test, y_train, y_test, model_type: str, model_params: dict):
     """
     Function to train a generic sklearn ML model
 
@@ -87,7 +123,6 @@ def train_model_classification(model_type: str, model_params: dict, file):
     :param experiment_name: Name of the MLFlow experiment
     """
 
-    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
     # Load the model dinamically
     ModelClass = dict(all_estimators())[model_type]
 
@@ -99,47 +134,23 @@ def train_model_classification(model_type: str, model_params: dict, file):
         return
 
     # Train the model
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train.values.ravel())
 
     # Do predictions
     y_pred = model.predict(X_test)
 
     # Compute the accuracy if the model is a classifier
     if isinstance(model, ClassifierMixin):
-        accuracy = accuracy_score(y_test, y_pred)
-        auc = roc_auc_score(file["status"], model.predict_proba(file[file.columns[:-2]].values)[:,1])
-        print(f"Accuracy of the model {model_type}: {accuracy}")
+        metrics = {
+            "Accuracy": accuracy_score(y_test, y_pred),
+            "auc": roc_auc_score(y_test, model.predict_proba(X_test)[:,1])
+        }
         print(confusion_matrix(y_test, y_pred))
         print(classification_report(y_test, y_pred))
-        print(f'AUC: {auc}')
-    else:
-        print(f"Model {model_type} successfully trained.")
+        log_on_mlflow(model_params, model_type, model, metrics)
 
-    #Logging on MLflow
-    with mlflow.start_run():
-        # Log the parameters
-        mlflow.log_params(model_params)
-        
-        # Log the model
-        mlflow.sklearn.log_model(model, model_type)
-        
-        # Log accuracy metric for classifier
-        if isinstance(model, ClassifierMixin):
-            mlflow.log_metric("accuracy", accuracy)
-            mlflow.log_metric("auc", accuracy)
-        
-        #Log the sklearn model and register
-        mlflow.sklearn.log_model(
-        sk_model=model,
-        artifact_path=model_type,
-        registered_model_name=model_type,
-    )
+def train_model_regression(X_train, X_test, y_train, y_test, model_type: str, model_params: dict):
 
-    print(f"Model {model_type} successfully logged on MLflow.")
-
-def train_model_regression(model_type: str, model_params: dict, file):
-
-    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
     # Load the model dinamically
     ModelClass = dict(all_estimators())[model_type]
 
@@ -155,43 +166,52 @@ def train_model_regression(model_type: str, model_params: dict, file):
     X_test_scaled = scaler.transform(X_test)
 
     # Train the model
-    model.fit(X_train_scaled, y_train)
+    model.fit(X_train_scaled, y_train.values.ravel())
 
     # Do predictions
     y_train_pred = model.predict(X_train_scaled)
     y_test_pred = model.predict(X_test_scaled)
 
-    # Compute the metrics
-    metrics = {
-        "MSE_train": mean_squared_error(y_train, y_train_pred),
-        "MSE_test": mean_squared_error(y_test, y_test_pred),
-        "RMSE_train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        "RMSE_test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        "MAE_train": mean_absolute_error(y_train, y_train_pred),
-        "MAE_test": mean_absolute_error(y_test, y_test_pred),
-        "R2_train": r2_score(y_train, y_train_pred),
-        "R2_test": r2_score(y_test, y_test_pred),
-    }
-    # Log the metrics
-    for metric, value in metrics.items():
-        mlflow.log_metric(metric, value)
+    if isinstance(model, RegressorMixin):
+        # Compute metrics
+        metrics = {
+            "MSE_train": mean_squared_error(y_train, y_train_pred),
+            "MSE_test": mean_squared_error(y_test, y_test_pred),
+            "RMSE_train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
+            "RMSE_test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
+            "MAE_train": mean_absolute_error(y_train, y_train_pred),
+            "MAE_test": mean_absolute_error(y_test, y_test_pred),
+            "R2_train": r2_score(y_train, y_train_pred),
+            "R2_test": r2_score(y_test, y_test_pred),
+        }
 
-    # Log parameters
-    mlflow.log_param("model", "RandomForestRegressor")
-    mlflow.log_param("scaling", "MinMaxScaler (-1, 1)")
-    mlflow.log_param("test_size", 0.2)
+        log_on_mlflow(model_params, model_type, model, metrics)
 
-    # Log del modello
-    mlflow.sklearn.log_model(model, "model")
-    print("Modello logged on MLflow.")
+def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict):
+    # Logging on MLflow
+    with mlflow.start_run():
+        # Log the parameters
+        mlflow.log_params(model_params)
 
-    # Print the metrics
-    for metric, value in metrics.items():
-        print(f"{metric}: {value}")
+        # Print the metrics
+        for metric, value in metrics.items():
+            print(f"{metric}: {value}")
+
+        # Log the metrics
+        for metric, value in metrics.items():
+            mlflow.log_metric(metric, value)
+
+        # Log the sklearn model and register
+        mlflow.sklearn.log_model(
+        sk_model=model,
+        artifact_path=model_type,
+        registered_model_name=model_type,
+    )
+    print(f"Model {model_type} successfully logged on MLflow.")
 
 def setup_mlflow():
     settings = load_mlflow_settings()
-    print(settings)
+    #print(settings)
     #Set the mlflow server uri
     mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
 
@@ -205,8 +225,6 @@ def setup_mlflow():
         if model not in estimators:
             print(f"Error: the model '{model}' is not available in scikit-learn.")
             return
-        else:
-            print(model)
 
     return settings
 
@@ -219,16 +237,18 @@ if __name__ == "__main__":
     # Load the dataset (here the Iris example)
     file = preprocess_dataset("fullDataset.csv", all)
 
+    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
     if len(settings.CLASSIFICATION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_classification(settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]], file)
+        train_model_classification(X_train, X_test, y_train, y_test, settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]])
     else:
         # Perform KFold cross validation
-        kfold_cross_validation(settings.CLASSIFICATION_MODELS, classification_model_params, settings.KFOLDS)
+        kfold_cross_validation(X_train, X_test, y_train, y_test, classification_model_params, settings.KFOLDS)
 
+    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
     if len(settings.REGRESSION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_regression(settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]], file)
+        train_model_regression(X_train, X_test, y_train, y_test, settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]])
     else:
-        # Perform KFold cross validation
-        kfold_cross_validation(settings.REGRESSION_MODELS, regression_model_params, settings.KFOLDS)
+        #Perform KFold cross validation
+        kfold_cross_validation(X_train, X_test, y_train, y_test, regression_model_params, settings.KFOLDS, scoring="r2")
