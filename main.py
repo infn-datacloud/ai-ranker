@@ -7,7 +7,7 @@ from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from settings import load_mlflow_settings
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error, roc_auc_score, r2_score
+from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error, precision_score, recall_score, roc_auc_score, r2_score
 from sklearn.utils import all_estimators
 from sklearn.base import ClassifierMixin, RegressorMixin
 from mlflow.models import infer_signature
@@ -64,6 +64,25 @@ def remove_outliers(file: pd.DataFrame):
     # Remove outliers in all the columns
     return file[~((file < lower_bound) | (file > upper_bound)).any(axis=1)]
 
+def remove_outliers(X: pd.DataFrame, y: pd.DataFrame):
+    # Concat X and y
+    combined = pd.concat([X, y], axis=1)
+
+    # Compute quantile on X featutes
+    Q1 = combined.quantile(0.25)
+    Q3 = combined.quantile(0.75)
+    IQR = Q3 - Q1
+
+    # Define limits for the outliers
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    # Remove outliers both for X and y
+    filtered = combined[~((combined < lower_bound) | (combined > upper_bound)).any(axis=1)]
+
+    # Separate X and y
+    return filtered.iloc[:, :-1], filtered.iloc[:, -1]
+
 def preprocess_dataset(filename: str, acceptedTemplate: list):
     file = load_local_dataset(filename)
     finalKeys = ["cpu_diff", "ram_diff", "storage_diff", "instances_diff",
@@ -95,10 +114,7 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
         "features": file[finalKeys].columns.to_list(),
         "features_number": len(file[finalKeys].columns)
     }
-    print(len(file))
-    file = remove_outliers(file[finalKeys])
-    print(len(file))
-    return file, metadata
+    return file[finalKeys], metadata
 
 def kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, models_params, n_splits=5, scoring="roc_auc"):
     X = X_train
@@ -220,10 +236,16 @@ def train_model_classification(X_train, X_test, y_train, y_test, metadata, model
     # Compute the accuracy if the model is a classifier
     if isinstance(model, ClassifierMixin):
         metrics = {
-            "Accuracy_train": accuracy_score(y_train, y_pred_train),
-            "auc_train": roc_auc_score(y_train, model.predict_proba(X_train_scaled)[:,1]),
-            "Accuracy_test": accuracy_score(y_test, y_pred_test),
-            "auc_test": roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:,1])
+            "Accuracy train": accuracy_score(y_train, y_pred_train),
+            "auc train": roc_auc_score(y_train, model.predict_proba(X_train_scaled)[:,1]),
+            "F1 train": f1_score(y_train, y_pred_train, average='binary'),
+            "Precision train": precision_score(y_train, y_pred_train, average='binary'),
+            "Recall train": recall_score(y_train, y_pred_train, average='binary'),
+            "Accuracy test": accuracy_score(y_test, y_pred_test),
+            "auc test": roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:,1]),
+            "F1 test": f1_score(y_test, y_pred_test, average='binary'),
+            "Precision test": precision_score(y_test, y_pred_test, average='binary'),
+            "Recall test": recall_score(y_test, y_pred_test, average='binary')
         }
         print(confusion_matrix(y_test, y_pred_test))
         print(classification_report(y_test, y_pred_test))
@@ -262,14 +284,14 @@ def train_model_regression(X_train, X_test, y_train, y_test, metadata, model_typ
     if isinstance(model, RegressorMixin):
         # Compute metrics
         metrics = {
-            "MSE_train": mean_squared_error(y_train, y_train_pred),
-            "MSE_test": mean_squared_error(y_test, y_test_pred),
-            "RMSE_train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
-            "RMSE_test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
-            "MAE_train": mean_absolute_error(y_train, y_train_pred),
-            "MAE_test": mean_absolute_error(y_test, y_test_pred),
-            "R2_train": r2_score(y_train, y_train_pred),
-            "R2_test": r2_score(y_test, y_test_pred),
+            "MSE train": mean_squared_error(y_train, y_train_pred),
+            "MSE test": mean_squared_error(y_test, y_test_pred),
+            "RMSE train": np.sqrt(mean_squared_error(y_train, y_train_pred)),
+            "RMSE test": np.sqrt(mean_squared_error(y_test, y_test_pred)),
+            "MAE train": mean_absolute_error(y_train, y_train_pred),
+            "MAE test": mean_absolute_error(y_test, y_test_pred),
+            "R2 train": r2_score(y_train, y_train_pred),
+            "R2 test": r2_score(y_test, y_test_pred),
         }
 
         log_on_mlflow(model_params, model_type, model, metrics, metadata, feature_importance_df)
@@ -332,17 +354,25 @@ if __name__ == "__main__":
     file, metadata = preprocess_dataset("fullDataset.csv", all)
 
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
+    if settings.REMOVE_OUTLIERS:
+        X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
+    else:
+        X_train_cleaned, y_train_cleaned = X_train, y_train
     if len(settings.CLASSIFICATION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_classification(X_train, X_test, y_train, y_test, metadata, settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]])
+        train_model_classification(X_train_cleaned, X_test, y_train_cleaned, y_test, metadata, settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]])
     else:
         # Perform KFold cross validation
-        kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, classification_model_params, settings.KFOLDS, scoring="roc_auc")
+        kfold_cross_validation(X_train_cleaned, X_test, y_train_cleaned, y_test, metadata, classification_model_params, settings.KFOLDS, scoring="roc_auc")
 
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
+    if settings.REMOVE_OUTLIERS:
+        X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
+    else:
+        X_train_cleaned, y_train_cleaned = X_train, y_train
     if len(settings.REGRESSION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_regression(X_train, X_test, y_train, y_test, metadata, settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]])
+        train_model_regression(X_train_cleaned, X_test, y_train_cleaned, y_test, metadata, settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]])
     else:
         #Perform KFold cross validation
-        kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, regression_model_params, settings.KFOLDS, scoring="r2")
+        kfold_cross_validation(X_train_cleaned, X_test, y_train_cleaned, y_test, metadata, regression_model_params, settings.KFOLDS, scoring="r2")
