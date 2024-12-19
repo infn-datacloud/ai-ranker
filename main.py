@@ -169,7 +169,7 @@ def get_feature_importance(model, columns, X_train_scaled):
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_train)
             shap.summary_plot(shap_values, X_train)
-            # Restituisce i valori medi di importanza per feature
+            # Gives mean values of feayure importance
             shap_importance = np.mean(np.abs(shap_values), axis=0)
             feature_importance_df = pd.DataFrame({
                 'Feature': X_train.columns,
