@@ -35,6 +35,10 @@ class MLflowSettings(BaseSettings):
         default=5,
         description="Number of folds for the KFold cross validation."
     )
+    REMOVE_OUTLIERS: bool = Field(
+        default=False,
+        description="Remove outliers"
+    )
 
     @field_validator("CLASSIFICATION_MODELS_PARAMS", "REGRESSION_MODELS_PARAMS", mode="before")
     def parse_models_params(cls, value):
