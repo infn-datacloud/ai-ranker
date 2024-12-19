@@ -3,7 +3,7 @@ import json
 import mlflow
 import mlflow.sklearn
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from settings import load_mlflow_settings
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
@@ -49,6 +49,19 @@ def load_kafka_dataset():
     df = pd.DataFrame(l_data)
     return df
 
+def remove_outliers(file: pd.DataFrame):
+    # Compute quantiles for all the columns
+    Q1 = file.quantile(0.25)
+    Q3 = file.quantile(0.75)
+    IQR = Q3 - Q1
+
+    # Define limits for the outliers
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    # Remove outliers in all the columns
+    return file[~((file < lower_bound) | (file > upper_bound)).any(axis=1)]
+
 def preprocess_dataset(filename: str, acceptedTemplate: list):
     file = load_local_dataset(filename)
     finalKeys = ["cpu_diff", "ram_diff", "storage_diff", "instances_diff",
@@ -66,7 +79,7 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
     file["gpu"] = file["gpu"].replace(mapTrueFalse).astype(int)
     file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
     file = file[file["avg_deployment_time"].notna()]
-    file = file[file['difference'] < 10000]
+    #file = file[file['difference'] < 10000]
 
     file["cpu_diff"] = (file["quota_cores"] - file["vcpus"]) - file["requested_cpu"]
     file["ram_diff"] = (file["quota_ram"] - file["ram"]) - file["requested_ram"]
@@ -74,9 +87,18 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
     file["instances_diff"] = (file["quota_instances"] - file["instances"]) - file["requested_nodes"]
     file["volumes_diff"] = (file["quota_volumes"] - file["volumes"]) - file["requested_volumes"]
     file["floatingips_diff"] = (file["quota_floatingips"] - file["floatingips"])
-    return file[finalKeys]
+    metadata = {
+        "start_time": file["creation_time"].iloc[0],
+        "end_time": file["creation_time"].iloc[-1],
+        "features": file[finalKeys].columns.to_list(),
+        "features_number": len(file[finalKeys].columns)
+    }
+    print(len(file))
+    file = remove_outliers(file[finalKeys])
+    print(len(file))
+    return file, metadata
 
-def kfold_cross_validation(X_train, X_test, y_train, y_test, models_params, n_splits=5, scoring="accuracy"):
+def kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, models_params, n_splits=5, scoring="roc_auc"):
     X = X_train
     y = y_train
 
@@ -89,6 +111,9 @@ def kfold_cross_validation(X_train, X_test, y_train, y_test, models_params, n_sp
     # Get all estimators
     all_models = dict(all_estimators())
 
+    # Initialize RobustScaler
+    scaler = RobustScaler()
+
     for model_name, params in models_params.items():
         # Fetch the model class
         ModelClass = all_models.get(model_name)
@@ -98,8 +123,11 @@ def kfold_cross_validation(X_train, X_test, y_train, y_test, models_params, n_sp
         # Instantiate the model with parameters
         model = ModelClass(**params)
 
+        # Scale the features
+        X_scaled = scaler.fit_transform(X)
+
         # Perform cross-validation
-        scores = cross_val_score(model, X, y.values.ravel(), cv=kf, scoring=scoring)
+        scores = cross_val_score(model, X_scaled, y.values.ravel(), cv=kf, scoring=scoring)
 
         # Store the scores in the dictionary
         model_scores[model_name] = scores
@@ -108,13 +136,13 @@ def kfold_cross_validation(X_train, X_test, y_train, y_test, models_params, n_sp
     best_model_name = max(mean_scores, key=mean_scores.get)
     print(f"Model selected for training: {best_model_name}")
     if issubclass(all_models.get(best_model_name), ClassifierMixin):
-        train_model_classification(X_train, X_test, y_train, y_test, best_model_name, models_params[best_model_name])
+        train_model_classification(X_train, X_test, y_train, y_test, metadata, best_model_name, models_params[best_model_name])
     elif issubclass(all_models.get(best_model_name), RegressorMixin):
-        train_model_regression(X_train, X_test, y_train, y_test, best_model_name, models_params[best_model_name])
+        train_model_regression(X_train, X_test, y_train, y_test, metadata, best_model_name, models_params[best_model_name])
 
     return model_scores
 
-def train_model_classification(X_train, X_test, y_train, y_test, model_type: str, model_params: dict):
+def train_model_classification(X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict):
     """
     Function to train a generic sklearn ML model
 
@@ -133,23 +161,31 @@ def train_model_classification(X_train, X_test, y_train, y_test, model_type: str
         print(f"Error in the creation of the model: {e}")
         return
 
+    scaler = MinMaxScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
     # Train the model
-    model.fit(X_train, y_train.values.ravel())
+    model.fit(X_train_scaled, y_train.values.ravel())
 
     # Do predictions
-    y_pred = model.predict(X_test)
+    y_pred_train = model.predict(X_train_scaled)
+    y_pred_test = model.predict(X_test_scaled)
 
     # Compute the accuracy if the model is a classifier
     if isinstance(model, ClassifierMixin):
         metrics = {
-            "Accuracy": accuracy_score(y_test, y_pred),
-            "auc": roc_auc_score(y_test, model.predict_proba(X_test)[:,1])
+            "Accuracy_train": accuracy_score(y_train, y_pred_train),
+            "auc_train": roc_auc_score(y_train, model.predict_proba(X_train_scaled)[:,1]),
+            "Accuracy_test": accuracy_score(y_test, y_pred_test),
+            "auc_test": roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:,1])
         }
-        print(confusion_matrix(y_test, y_pred))
-        print(classification_report(y_test, y_pred))
-        log_on_mlflow(model_params, model_type, model, metrics)
+        print(confusion_matrix(y_test, y_pred_test))
+        print(classification_report(y_test, y_pred_test))
+        log_on_mlflow(model_params, model_type, model, metrics, metadata)
 
-def train_model_regression(X_train, X_test, y_train, y_test, model_type: str, model_params: dict):
+
+def train_model_regression(X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict):
 
     # Load the model dinamically
     ModelClass = dict(all_estimators())[model_type]
@@ -161,7 +197,7 @@ def train_model_regression(X_train, X_test, y_train, y_test, model_type: str, mo
         print(f"Error in the creation of the model: {e}")
         return
 
-    scaler = MinMaxScaler(feature_range=(-1, 1))
+    scaler = RobustScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
@@ -185,9 +221,9 @@ def train_model_regression(X_train, X_test, y_train, y_test, model_type: str, mo
             "R2_test": r2_score(y_test, y_test_pred),
         }
 
-        log_on_mlflow(model_params, model_type, model, metrics)
+        log_on_mlflow(model_params, model_type, model, metrics, metadata)
 
-def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict):
+def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict, metadata: dict):
     # Logging on MLflow
     with mlflow.start_run():
         # Log the parameters
@@ -206,7 +242,10 @@ def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict
         sk_model=model,
         artifact_path=model_type,
         registered_model_name=model_type,
-    )
+        metadata=metadata
+        )
+        for key, value in metadata.items():
+            mlflow.set_tag(key, value)
     print(f"Model {model_type} successfully logged on MLflow.")
 
 def setup_mlflow():
@@ -235,20 +274,20 @@ if __name__ == "__main__":
     regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
 
     # Load the dataset (here the Iris example)
-    file = preprocess_dataset("fullDataset.csv", all)
+    file, metadata = preprocess_dataset("fullDataset.csv", all)
 
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
     if len(settings.CLASSIFICATION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_classification(X_train, X_test, y_train, y_test, settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]])
+        train_model_classification(X_train, X_test, y_train, y_test, metadata, settings.CLASSIFICATION_MODELS[0], classification_model_params[settings.CLASSIFICATION_MODELS[0]])
     else:
         # Perform KFold cross validation
-        kfold_cross_validation(X_train, X_test, y_train, y_test, classification_model_params, settings.KFOLDS)
+        kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, classification_model_params, settings.KFOLDS, scoring="roc_auc")
 
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
     if len(settings.REGRESSION_MODELS) == 1:
         # Train the model chosen by the user
-        train_model_regression(X_train, X_test, y_train, y_test, settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]])
+        train_model_regression(X_train, X_test, y_train, y_test, metadata, settings.REGRESSION_MODELS[0], regression_model_params[settings.REGRESSION_MODELS[0]])
     else:
         #Perform KFold cross validation
-        kfold_cross_validation(X_train, X_test, y_train, y_test, regression_model_params, settings.KFOLDS, scoring="r2")
+        kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, regression_model_params, settings.KFOLDS, scoring="r2")
