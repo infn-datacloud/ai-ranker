@@ -112,7 +112,8 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
         "start_time": file["creation_time"].iloc[0],
         "end_time": file["creation_time"].iloc[-1],
         "features": file[finalKeys].columns.to_list(),
-        "features_number": len(file[finalKeys].columns)
+        "features_number": len(file[finalKeys].columns),
+        "remove outliers": settings.REMOVE_OUTLIERS
     }
     return file[finalKeys], metadata
 
@@ -216,7 +217,7 @@ def train_model_classification(X_train, X_test, y_train, y_test, metadata, model
         print(f"Error in the creation of the model: {e}")
         return
 
-    scaler = MinMaxScaler()
+    scaler = RobustScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
