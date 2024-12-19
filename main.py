@@ -17,6 +17,8 @@ import pandas as pd
 from kafka import KafkaConsumer
 import random
 import string
+import shap
+from tempfile import NamedTemporaryFile
 
 singleVM = ["single-vm/single_vm.yaml", "single-vm/single_vm_with_volume.yaml", "single-vm/private-net/single_vm.yaml", "single-vm/private-net/single_vm_with_volume.yaml"]
 singleVMComplex = ["single-vm/cloud_storage_service.yaml", "single-vm/elasticsearch_kibana.yaml", "single-vm/iam_voms-aa.yaml"]
@@ -142,6 +144,43 @@ def kfold_cross_validation(X_train, X_test, y_train, y_test, metadata, models_pa
 
     return model_scores
 
+def get_feature_importance(model, columns, X_train_scaled):
+    # Case 1: Models with attribute `feature_importances_`
+    if hasattr(model, 'feature_importances_'):
+        feature_importances = model.feature_importances_
+        feature_importance_df = pd.DataFrame({
+            'Feature': columns,
+            'Importance': feature_importances
+        }).sort_values(by='Importance', ascending=False)
+        return feature_importance_df
+
+    # Case 2: Models like Lasso (coefficient)
+    elif hasattr(model, 'coef_'):
+        coef = model.coef_
+        feature_importance_df = pd.DataFrame({
+            'Feature': columns,
+            'Coefficient': coef
+        }).sort_values(by='Coefficient', ascending=False)
+        return feature_importance_df
+
+    # Case 3: Models without `feature_importances_` or `coef_`, use SHAP
+    else:
+        try:
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_train)
+            shap.summary_plot(shap_values, X_train)
+            # Restituisce i valori medi di importanza per feature
+            shap_importance = np.mean(np.abs(shap_values), axis=0)
+            feature_importance_df = pd.DataFrame({
+                'Feature': X_train.columns,
+                'Importance': shap_importance
+            }).sort_values(by='Importance', ascending=False)
+            return feature_importance_df
+        except Exception as e:
+            print(f"Errore nell'uso di SHAP: {e}")
+            return None
+
+
 def train_model_classification(X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict):
     """
     Function to train a generic sklearn ML model
@@ -168,6 +207,12 @@ def train_model_classification(X_train, X_test, y_train, y_test, metadata, model
     # Train the model
     model.fit(X_train_scaled, y_train.values.ravel())
 
+    # Get feature importance
+    feature_importance_df = get_feature_importance(model, X_train.columns, X_train_scaled)
+
+    if feature_importance_df is not None:
+        print(feature_importance_df)
+
     # Do predictions
     y_pred_train = model.predict(X_train_scaled)
     y_pred_test = model.predict(X_test_scaled)
@@ -182,7 +227,7 @@ def train_model_classification(X_train, X_test, y_train, y_test, metadata, model
         }
         print(confusion_matrix(y_test, y_pred_test))
         print(classification_report(y_test, y_pred_test))
-        log_on_mlflow(model_params, model_type, model, metrics, metadata)
+        log_on_mlflow(model_params, model_type, model, metrics, metadata, feature_importance_df)
 
 
 def train_model_regression(X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict):
@@ -204,6 +249,12 @@ def train_model_regression(X_train, X_test, y_train, y_test, metadata, model_typ
     # Train the model
     model.fit(X_train_scaled, y_train.values.ravel())
 
+    # Get feature importance
+    feature_importance_df = get_feature_importance(model, X_train.columns, X_train_scaled)
+
+    if feature_importance_df is not None:
+        print(feature_importance_df)
+
     # Do predictions
     y_train_pred = model.predict(X_train_scaled)
     y_test_pred = model.predict(X_test_scaled)
@@ -221,9 +272,9 @@ def train_model_regression(X_train, X_test, y_train, y_test, metadata, model_typ
             "R2_test": r2_score(y_test, y_test_pred),
         }
 
-        log_on_mlflow(model_params, model_type, model, metrics, metadata)
+        log_on_mlflow(model_params, model_type, model, metrics, metadata, feature_importance_df)
 
-def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict, metadata: dict):
+def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict, metadata: dict, feature_importance_df: pd.DataFrame):
     # Logging on MLflow
     with mlflow.start_run():
         # Log the parameters
@@ -246,6 +297,10 @@ def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict
         )
         for key, value in metadata.items():
             mlflow.set_tag(key, value)
+
+        with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
+            feature_importance_df.to_csv(temp_file.name, index=False)
+            mlflow.log_artifact(temp_file.name, artifact_path="feature_importances")
     print(f"Model {model_type} successfully logged on MLflow.")
 
 def setup_mlflow():
