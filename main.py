@@ -30,7 +30,7 @@ simple = singleVM + docker
 complex = singleVMComplex + k8s + jupyter
 
 def load_local_dataset(filename: str):
-    df = pd.read_csv(f"/home/ubuntu/dataset/{filename}")
+    df = pd.read_csv(f"../dataset/{filename}")
     return df
 
 def load_kafka_dataset():
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
 
     # Load the dataset (here the Iris example)
-    file, metadata = preprocess_dataset("fullDataset.csv", all)
+    file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all)
 
     X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
     if settings.REMOVE_OUTLIERS:

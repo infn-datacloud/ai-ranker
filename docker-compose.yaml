@@ -1,0 +1,8 @@
+services:
+  ai-ranker-training:
+    image: ai-ranker-training:v0
+    container_name: ai-ranker-training
+    env_file:
+      - .env
+    volumes:
+      - /home/ubuntu/dataset:/dataset

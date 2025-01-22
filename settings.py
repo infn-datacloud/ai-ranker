@@ -39,6 +39,10 @@ class MLflowSettings(BaseSettings):
         default=False,
         description="Remove outliers"
     )
+    LOCAL_DATASET: str = Field(
+        default="",
+        description="Name of the local dataset."
+    )
 
     @field_validator("CLASSIFICATION_MODELS_PARAMS", "REGRESSION_MODELS_PARAMS", mode="before")
     def parse_models_params(cls, value):
