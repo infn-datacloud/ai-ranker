@@ -5,4 +5,26 @@ services:
     env_file:
       - .env
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - /home/ubuntu/dataset:/dataset
+    command: bash -c "while true; do sleep 1; done"
+    labels:
+      ofelia.enabled: true
+      ofelia.job-exec.feed.schedule: "@every 1m"
+      ofelia.job-exec.feed.command: "python /app/main.py"
+      ofelia.job-exec.feed.save-folder: /var/log
+      ofelia.job-exec.feed.no-overlap: false
+
+  ofelia:
+    image: mcuadros/ofelia:0.3.13
+    container_name: feeder-job-scheduler
+    depends_on:
+      - ai-ranker-training
+    restart: unless-stopped
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - feeder-logs:/var/log
+
+volumes:
+  feeder-logs:
