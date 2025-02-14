@@ -14,11 +14,12 @@ from mlflow.models import infer_signature
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix
 import pandas as pd
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, TopicPartition
 import random
 import string
 import shap
 from tempfile import NamedTemporaryFile
+import processing
 
 singleVM = ["single-vm/single_vm.yaml", "single-vm/single_vm_with_volume.yaml", "single-vm/private-net/single_vm.yaml", "single-vm/private-net/single_vm_with_volume.yaml"]
 singleVMComplex = ["single-vm/cloud_storage_service.yaml", "single-vm/elasticsearch_kibana.yaml", "single-vm/iam_voms-aa.yaml"]
@@ -33,23 +34,16 @@ def load_local_dataset(filename: str):
     df = pd.read_csv(f"../dataset/{filename}")
     return df
 
-def load_kafka_dataset():
-    group_id = ''.join(random.choices(string.ascii_uppercase +
-                                  string.ascii_lowercase +
-                                  string.digits, k=64))
+def set_metadata(df:pd.DataFrame):
+    metadata = {
+        "start_time": df["timestamp"].max() ,
+        "end_time": df["timestamp"].min(),
+        "features": settings.FINAL_FEATURES,
+        "features_number": len(settings.FINAL_FEATURES),
+        "remove outliers": settings.REMOVE_OUTLIERS
+    }
+    return metadata
 
-    consumer = KafkaConsumer(
-        'training-ai-ranker',
-        bootstrap_servers=['192.168.21.96:9092'],
-        group_id=f'rally-group-{group_id}',
-        auto_offset_reset='earliest', 
-        enable_auto_commit=True,
-        value_deserializer=lambda x: json.loads(x),
-        consumer_timeout_ms=500
-    )
-    l_data = [message.value for message in consumer]
-    df = pd.DataFrame(l_data)
-    return df
 
 def remove_outliers(file: pd.DataFrame):
     # Compute quantiles for all the columns
@@ -86,7 +80,7 @@ def remove_outliers(X: pd.DataFrame, y: pd.DataFrame):
 def preprocess_dataset(filename: str, acceptedTemplate: list):
     file = load_local_dataset(filename)
     finalKeys = ["cpu_diff", "ram_diff", "storage_diff", "instances_diff",
-                 "floatingips_diff", 'gpu', 'sla_failure_percentage',
+                 "floatingips_diff", 'gpu', 'test_failure_perc_30d',
                  'overbooking_ram', 'avg_deployment_time',
                  'failure_percentage', 'complexity', "status", "difference"]
     file['complexity'] = file['selected_template'].isin(complex).astype(int)
@@ -98,7 +92,8 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
     mapSla = {"TROPPO PRESTO!!": 0, "No matching entries": 0}
     file["status"] = file["status"].replace(mapStatus).astype(int)
     file["gpu"] = file["gpu"].replace(mapTrueFalse).astype(int)
-    file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
+    #file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
+    file["test_failure_perc_30d"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
     file = file[file["avg_deployment_time"].notna()]
     #file = file[file['difference'] < 10000]
 
@@ -350,11 +345,18 @@ if __name__ == "__main__":
     settings = setup_mlflow()
     classification_model_params = json.loads(settings.CLASSIFICATION_MODELS_PARAMS)
     regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
-
     # Load the dataset (here the Iris example)
-    file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all)
-
-    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-2:-1], test_size=0.2, random_state=42)
+    if settings.LOCAL_MODE:
+        file = load_local_dataset(settings.LOCAL_DATASET)
+        #file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all)
+    else: 
+        file = processing.load_dataset_from_kafka(kafka_server_url="localhost:9092", topic="training", partition=0, offset=765)
+    metadata = set_metadata(file)
+    df = processing.preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
+    df = processing.filter_df(df, settings.FINAL_FEATURES)
+    print(df) 
+    
+    X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,:-2], df.iloc[:,-2:-1], test_size=0.2, random_state=42)
     if settings.REMOVE_OUTLIERS:
         X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
     else:
@@ -366,7 +368,7 @@ if __name__ == "__main__":
         # Perform KFold cross validation
         kfold_cross_validation(X_train_cleaned, X_test, y_train_cleaned, y_test, metadata, classification_model_params, settings.KFOLDS, scoring="roc_auc")
 
-    X_train, X_test, y_train, y_test = train_test_split(file.iloc[:,:-2], file.iloc[:,-1:], test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,:-2], df.iloc[:,-1:], test_size=0.2, random_state=42)
     if settings.REMOVE_OUTLIERS:
         X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
     else:
