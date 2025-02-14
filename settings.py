@@ -39,10 +39,24 @@ class MLflowSettings(BaseSettings):
         default=False,
         description="Remove outliers"
     )
+    LOCAL_MODE: bool = Field(
+        default=False,
+        description="Perform the training using local dataset"
+    )
     LOCAL_DATASET: str = Field(
         default="",
         description="Name of the local dataset."
     )
+    FINAL_FEATURES: list = Field(
+        default=[],
+        description="List of final features in the processed Dataset"
+    )
+
+    TEMPLATE_COMPLEX_TYPES :list =Field(
+        default=["INDIGO IAM as a Service","Elasticsearch and Kibana","Kubernates cluster", "Spark + Jupyter cluster","HTCondor mini", "HTCondor cluster", "Jupyter with persistence for Notebooks", "Jupyter + Matlab (with persistence for Notebooks)","Computational enviroment for Machine Learning INFN (ML_INFN)", "Working Station for CYGNO experiment", "Sync&Share aaS" ],
+        decription= "List of complex template"
+    )
+    
 
     @field_validator("CLASSIFICATION_MODELS_PARAMS", "REGRESSION_MODELS_PARAMS", mode="before")
     def parse_models_params(cls, value):
