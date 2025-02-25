@@ -4,7 +4,7 @@ from typing import Optional
 import json
 import ast
 
-class MLflowSettings(BaseSettings):
+class AIRankerTrainingSettings(BaseSettings):
     # Definition of environment variables with default values and description
     # Definizione delle variabili d'ambiente con valori di default e descrizioni
     MLFLOW_TRACKING_URI: str = Field(
@@ -53,10 +53,11 @@ class MLflowSettings(BaseSettings):
     )
 
     TEMPLATE_COMPLEX_TYPES :list =Field(
-        default=["INDIGO IAM as a Service","Elasticsearch and Kibana","Kubernates cluster", "Spark + Jupyter cluster","HTCondor mini", "HTCondor cluster", "Jupyter with persistence for Notebooks", "Jupyter + Matlab (with persistence for Notebooks)","Computational enviroment for Machine Learning INFN (ML_INFN)", "Working Station for CYGNO experiment", "Sync&Share aaS" ],
+        default=["INDIGO IAM as a Service", "Elasticsearch and Kibana", "Kubernates cluster", "Spark + Jupyter cluster",
+            "HTCondor mini", "HTCondor cluster", "Jupyter with persistence for Notebooks", "Jupyter + Matlab (with persistence for Notebooks)",
+            "Computational enviroment for Machine Learning INFN (ML_INFN)", "Working Station for CYGNO experiment", "Sync&Share aaS" ],
         decription= "List of complex template"
     )
-    
 
     @field_validator("CLASSIFICATION_MODELS_PARAMS", "REGRESSION_MODELS_PARAMS", mode="before")
     def parse_models_params(cls, value):
@@ -71,11 +72,11 @@ class MLflowSettings(BaseSettings):
             except json.JSONDecodeError as e:
                 raise ValueError(f"Error in CLASSIFICATION_MODELS_PARAMS parsing: {e}")
         return value
-        
+
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
 
 # Function to load the settings
-def load_mlflow_settings() -> MLflowSettings:
-    return MLflowSettings()
+def load_airankertraining_settings() -> AIRankerTrainingSettings:
+    return AIRankerTrainingSettings()

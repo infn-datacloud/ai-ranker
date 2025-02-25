@@ -4,7 +4,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
-from settings import load_mlflow_settings
+from settings import load_airankertraining_settings
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error, precision_score, recall_score, roc_auc_score, r2_score
@@ -322,9 +322,10 @@ def log_on_mlflow(model_params: dict, model_type: str, model: any, metrics: dict
     print(f"Model {model_type} successfully logged on MLflow.")
 
 def setup_mlflow():
-    settings = load_mlflow_settings()
-    #print(settings)
-    #Set the mlflow server uri
+    # Load the settings
+    settings = load_airankertraining_settings()
+
+    # Set the mlflow server uri
     mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
 
     # Set the MLFlow experiment
@@ -355,7 +356,7 @@ if __name__ == "__main__":
     df = processing.preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
     df = processing.filter_df(df, settings.FINAL_FEATURES)
     print(df) 
-    
+
     X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,:-2], df.iloc[:,-2:-1], test_size=0.2, random_state=42)
     if settings.REMOVE_OUTLIERS:
         X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
