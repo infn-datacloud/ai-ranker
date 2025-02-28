@@ -8,7 +8,8 @@
             "name": "Training Script",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main.py --training",
+            "program": "${workspaceFolder}/src/main.py",
+            "args": ["--training"],
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -16,7 +17,8 @@
             "name": "Inference service",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main.py --inference",
+            "program": "${workspaceFolder}/src/main.py",
+            "args": ["--inference"],
             "console": "integratedTerminal",
             "justMyCode": false
         }
