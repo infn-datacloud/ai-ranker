@@ -69,7 +69,7 @@ def load_local_dataset(filename: str):
     return df
 
 
-def set_metadata(df: pd.DataFrame):
+def set_metadata(df: pd.DataFrame, settings):
     metadata = {
         "start_time": df["timestamp"].max(),
         "end_time": df["timestamp"].min(),
@@ -462,7 +462,7 @@ def run(logger: Logger) -> None:
         file = processing.load_dataset_from_kafka(
             kafka_server_url="localhost:9092", topic="training", partition=0, offset=765
         )
-    metadata = set_metadata(file)
+    metadata = set_metadata(file, settings)
     df = processing.preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
     df = processing.filter_df(df, settings.FINAL_FEATURES)
     print(df)
