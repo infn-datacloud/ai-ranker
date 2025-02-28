@@ -1,6 +1,8 @@
 from parser import parser
+
 from logger import create_logger
 from training.main import run as training_run
+
 # from inference.main import run as inference_run
 
 

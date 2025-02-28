@@ -1,7 +1,9 @@
-import pandas as pd
-import numpy as np
-from kafka import KafkaConsumer, TopicPartition
 import json
+
+import numpy as np
+import pandas as pd
+from kafka import KafkaConsumer, TopicPartition
+
 
 def load_dataset_from_kafka(kafka_server_url:str, topic:str, partition: int, offset:int):
 

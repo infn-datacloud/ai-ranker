@@ -1,8 +1,8 @@
-from pydantic import AnyHttpUrl, Field, field_validator, validator
-from pydantic_settings import BaseSettings
-from typing import Optional
 import json
-import ast
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
 
 class AIRankerTrainingSettings(BaseSettings):
     # Definition of environment variables with default values and description
