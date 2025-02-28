@@ -342,7 +342,7 @@ def setup_mlflow():
 
     return settings
 
-def run():
+def run(logger: Logger) -> None:
     settings = setup_mlflow()
     classification_model_params = json.loads(settings.CLASSIFICATION_MODELS_PARAMS)
     regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
