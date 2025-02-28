@@ -1,26 +1,32 @@
-import sys
 import json
+from logging import Logger
+from tempfile import NamedTemporaryFile
+
 import mlflow
 import mlflow.sklearn
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
+import pandas as pd
+import shap
+from sklearn.base import ClassifierMixin, RegressorMixin
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
+from sklearn.preprocessing import RobustScaler
+from sklearn.utils import all_estimators
+
+import processing
 from training import settings
 from training.settings import load_airankertraining_settings
-from sklearn import datasets
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error, precision_score, recall_score, roc_auc_score, r2_score
-from sklearn.utils import all_estimators
-from sklearn.base import ClassifierMixin, RegressorMixin
-from mlflow.models import infer_signature
-from sklearn.model_selection import KFold, cross_val_score
-from sklearn.metrics import classification_report, confusion_matrix
-import pandas as pd
-from kafka import KafkaConsumer, TopicPartition
-import random
-import string
-import shap
-from tempfile import NamedTemporaryFile
-import processing
 
 singleVM = ["single-vm/single_vm.yaml", "single-vm/single_vm_with_volume.yaml", "single-vm/private-net/single_vm.yaml", "single-vm/private-net/single_vm_with_volume.yaml"]
 singleVMComplex = ["single-vm/cloud_storage_service.yaml", "single-vm/elasticsearch_kibana.yaml", "single-vm/iam_voms-aa.yaml"]
