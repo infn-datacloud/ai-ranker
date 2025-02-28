@@ -4,7 +4,8 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
-from settings import load_airankertraining_settings
+from training import settings
+from training.settings import load_airankertraining_settings
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error, precision_score, recall_score, roc_auc_score, r2_score
@@ -179,12 +180,12 @@ def get_feature_importance(model, columns, X_train_scaled):
     else:
         try:
             explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X_train)
-            shap.summary_plot(shap_values, X_train)
+            shap_values = explainer.shap_values(X_train_scaled)
+            shap.summary_plot(shap_values, X_train_scaled)
             # Gives mean values of feayure importance
             shap_importance = np.mean(np.abs(shap_values), axis=0)
             feature_importance_df = pd.DataFrame({
-                'Feature': X_train.columns,
+                'Feature': columns,
                 'Importance': shap_importance
             }).sort_values(by='Importance', ascending=False)
             return feature_importance_df
@@ -341,8 +342,7 @@ def setup_mlflow():
 
     return settings
 
-if __name__ == "__main__":
-
+def run():
     settings = setup_mlflow()
     classification_model_params = json.loads(settings.CLASSIFICATION_MODELS_PARAMS)
     regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
