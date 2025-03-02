@@ -442,7 +442,9 @@ def setup_mlflow():
     # Get all sklearn models (both classifiers and regressors)
     estimators = dict(all_estimators())
 
-    for model in settings.CLASSIFICATION_MODELS + settings.REGRESSION_MODELS:
+    for model in (
+        settings.CLASSIFICATION_MODELS.keys() + settings.REGRESSION_MODELS.keys()
+    ):
         if model not in estimators:
             print(f"Error: the model '{model}' is not available in scikit-learn.")
             return
@@ -452,8 +454,8 @@ def setup_mlflow():
 
 def run(logger: Logger) -> None:
     settings = setup_mlflow()
-    classification_model_params = json.loads(settings.CLASSIFICATION_MODELS_PARAMS)
-    regression_model_params = json.loads(settings.REGRESSION_MODELS_PARAMS)
+    classification_model_params = json.loads(settings.CLASSIFICATION_MODELS)
+    regression_model_params = json.loads(settings.REGRESSION_MODELS)
     # Load the dataset (here the Iris example)
     if settings.LOCAL_MODE:
         file = load_local_dataset(settings.LOCAL_DATASET)
@@ -474,7 +476,7 @@ def run(logger: Logger) -> None:
         X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
     else:
         X_train_cleaned, y_train_cleaned = X_train, y_train
-    if len(settings.CLASSIFICATION_MODELS) == 1:
+    if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
         # Train the model chosen by the user
         train_model_classification(
             X_train_cleaned,
@@ -482,8 +484,8 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            settings.CLASSIFICATION_MODELS[0],
-            classification_model_params[settings.CLASSIFICATION_MODELS[0]],
+            settings.CLASSIFICATION_MODELS.keys()[0],
+            classification_model_params[settings.CLASSIFICATION_MODELS.keys()[0]],
         )
     else:
         # Perform KFold cross validation
@@ -505,7 +507,7 @@ def run(logger: Logger) -> None:
         X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
     else:
         X_train_cleaned, y_train_cleaned = X_train, y_train
-    if len(settings.REGRESSION_MODELS) == 1:
+    if len(settings.REGRESSION_MODELS.keys()) == 1:
         # Train the model chosen by the user
         train_model_regression(
             X_train_cleaned,
@@ -513,8 +515,8 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            settings.REGRESSION_MODELS[0],
-            regression_model_params[settings.REGRESSION_MODELS[0]],
+            settings.REGRESSION_MODELS.keys()[0],
+            regression_model_params[settings.REGRESSION_MODELS.keys()[0]],
         )
     else:
         # Perform KFold cross validation
