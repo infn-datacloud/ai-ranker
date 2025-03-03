@@ -438,7 +438,7 @@ def log_on_mlflow(
 
 def run(logger: Logger) -> None:
     settings = load_training_settings()
-    # setup_mlflow(logger=logger)
+    setup_mlflow(logger=logger)
 
     df = load_dataset(settings=settings, logger=logger)
     metadata = MetaData(
