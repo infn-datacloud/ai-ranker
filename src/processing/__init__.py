@@ -1,13 +1,27 @@
 import json
+from logging import Logger
 
 import numpy as np
 import pandas as pd
 from kafka import KafkaConsumer, TopicPartition
 
+from settings import InferenceSettings, TrainingSettings
+
+
+def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
+    """Upload from local file the dataset."""
+    try:
+        df = pd.read_csv(f"{filename}")
+    except FileNotFoundError:
+        logger.error("File %s not found", filename)
+        exit(1)
+    return df
+
 
 def load_dataset_from_kafka(
-    kafka_server_url: str, topic: str, partition: int, offset: int
+    kafka_server_url: str, topic: str, partition: int, offset: int = 0
 ):
+    """Load from kafka the dataset."""
     consumer = KafkaConsumer(
         # topic,
         bootstrap_servers=kafka_server_url,
@@ -25,6 +39,23 @@ def load_dataset_from_kafka(
     l_data = [message.value for message in consumer]
     df = pd.DataFrame(l_data)
     return df
+
+
+def load_dataset(
+    settings: TrainingSettings | InferenceSettings, logger: Logger
+) -> pd.DataFrame:
+    """Load the dataset from a local one or from kafka."""
+    if settings.LOCAL_MODE:
+        if settings.LOCAL_DATASET is None:
+            logger.error("LOCAL_DATASET environment variable has not been set.")
+            exit(1)
+        return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
+    return load_dataset_from_kafka(
+        kafka_server_url=str(settings.KAFKA_URL),
+        topic=settings.KAFKA_TRAINING_TOPIC,
+        partition=0,
+        offset=765,
+    )
 
 
 def filter_df(df: pd.DataFrame, columns_to_return: list) -> pd.DataFrame:
