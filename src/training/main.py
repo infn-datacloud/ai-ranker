@@ -441,8 +441,7 @@ def setup_mlflow(settings: AIRankerTrainingSettings) -> None:
 def run(logger: Logger) -> None:
     settings = load_airankertraining_settings()
     setup_mlflow(settings)
-    classification_model_params = settings.CLASSIFICATION_MODELS
-    regression_model_params = settings.REGRESSION_MODELS
+
     # Load the dataset (here the Iris example)
     if settings.LOCAL_MODE:
         file = load_local_dataset(settings.LOCAL_DATASET)
@@ -464,6 +463,7 @@ def run(logger: Logger) -> None:
     else:
         X_train_cleaned, y_train_cleaned = X_train, y_train
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
+        model = settings.CLASSIFICATION_MODELS.keys()[0]
         # Train the model chosen by the user
         train_model_classification(
             X_train_cleaned,
@@ -471,8 +471,8 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            settings.CLASSIFICATION_MODELS.keys()[0],
-            classification_model_params[settings.CLASSIFICATION_MODELS.keys()[0]],
+            model,
+            settings.CLASSIFICATION_MODELS.get(model),
         )
     else:
         # Perform KFold cross validation
@@ -482,7 +482,7 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            classification_model_params,
+            settings.CLASSIFICATION_MODELS,
             settings.KFOLDS,
             scoring="roc_auc",
         )
@@ -495,6 +495,7 @@ def run(logger: Logger) -> None:
     else:
         X_train_cleaned, y_train_cleaned = X_train, y_train
     if len(settings.REGRESSION_MODELS.keys()) == 1:
+        model = settings.REGRESSION_MODELS.keys()[0]
         # Train the model chosen by the user
         train_model_regression(
             X_train_cleaned,
@@ -502,8 +503,8 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            settings.REGRESSION_MODELS.keys()[0],
-            regression_model_params[settings.REGRESSION_MODELS.keys()[0]],
+            model,
+            settings.REGRESSION_MODELS.get(model),
         )
     else:
         # Perform KFold cross validation
@@ -513,7 +514,7 @@ def run(logger: Logger) -> None:
             y_train_cleaned,
             y_test,
             metadata,
-            regression_model_params,
+            settings.REGRESSION_MODELS,
             settings.KFOLDS,
             scoring="r2",
         )
