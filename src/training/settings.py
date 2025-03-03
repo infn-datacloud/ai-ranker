@@ -39,6 +39,10 @@ class AIRankerTrainingSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
+    MLFLOW_HTTP_REQUEST_TIMEOUT: int = Field(
+        default=20, decription="Timeout in seconds for MLflow HTTP requests"
+    )
+
 
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
     @classmethod
