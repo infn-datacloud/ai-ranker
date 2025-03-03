@@ -81,39 +81,29 @@ simple = singleVM + docker
 complex = singleVMComplex + k8s + jupyter
 
 
-def remove_outliers(file: pd.DataFrame):
-    # Compute quantiles for all the columns
-    Q1 = file.quantile(0.25)
-    Q3 = file.quantile(0.75)
-    IQR = Q3 - Q1
-
-    # Define limits for the outliers
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-
-    # Remove outliers in all the columns
-    return file[~((file < lower_bound) | (file > upper_bound)).any(axis=1)]
+def remove_outliers_from_dataframe(
+    df: pd.DataFrame, *, q1: float = 0.25, q3: float = 0.75, k: float = 1.5
+) -> pd.DataFrame:
+    """Compute quantiles for all columns, define limits and remove outliers."""
+    q1_series = df.quantile(q1)
+    q3_series = df.quantile(q3)
+    iqr = q3_series - q1_series
+    lower_bound = q1_series - k * iqr
+    upper_bound = q3_series + k * iqr
+    return df[~((df < lower_bound) | (df > upper_bound)).any(axis=1)]
 
 
-def remove_outliers(X: pd.DataFrame, y: pd.DataFrame):
-    # Concat X and y
-    combined = pd.concat([X, y], axis=1)
-
-    # Compute quantile on X featutes
-    Q1 = combined.quantile(0.25)
-    Q3 = combined.quantile(0.75)
-    IQR = Q3 - Q1
-
-    # Define limits for the outliers
-    lower_bound = Q1 - 1.5 * IQR
-    upper_bound = Q3 + 1.5 * IQR
-
-    # Remove outliers both for X and y
-    filtered = combined[
-        ~((combined < lower_bound) | (combined > upper_bound)).any(axis=1)
-    ]
-
-    # Separate X and y
+def remove_outliers(
+    x: pd.DataFrame,
+    y: pd.DataFrame,
+    *,
+    q1: float = 0.25,
+    q3: float = 0.75,
+    k: float = 1.5,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Concat X and Y, remove outliers and split X from Y."""
+    combined = pd.concat([x, y], axis=1)
+    filtered = remove_outliers_from_dataframe(combined, q1=q1, q3=q3, k=k)
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
