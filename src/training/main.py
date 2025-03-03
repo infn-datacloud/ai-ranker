@@ -31,6 +31,7 @@ from processing import (
     preprocessing,
 )
 from settings import load_training_settings, setup_mlflow
+from training.models import MetaData
 
 singleVM = [
     "single-vm/single_vm.yaml",
@@ -66,17 +67,6 @@ jupyter = [
 all = singleVM + singleVMComplex + k8s + docker + jupyter
 simple = singleVM + docker
 complex = singleVMComplex + k8s + jupyter
-
-
-def set_metadata(df: pd.DataFrame, settings):
-    metadata = {
-        "start_time": df["timestamp"].max(),
-        "end_time": df["timestamp"].min(),
-        "features": settings.FINAL_FEATURES,
-        "features_number": len(settings.FINAL_FEATURES),
-        "remove outliers": settings.REMOVE_OUTLIERS,
-    }
-    return metadata
 
 
 def remove_outliers(file: pd.DataFrame):
@@ -160,13 +150,13 @@ def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
         "requested_volumes"
     ]
     file["floatingips_diff"] = file["quota_floatingips"] - file["floatingips"]
-    metadata = {
-        "start_time": file["creation_time"].iloc[0],
-        "end_time": file["creation_time"].iloc[-1],
-        "features": file[finalKeys].columns.to_list(),
-        "features_number": len(file[finalKeys].columns),
-        "remove outliers": remove_outliers,
-    }
+    metadata = MetaData(
+        start_time=file["creation_time"].iloc[0],
+        end_time=file["creation_time"].iloc[-1],
+        features=file[finalKeys].columns.to_list(),
+        features_number=len(file[finalKeys].columns),
+        remove_outliers=remove_outliers,
+    )
     return file[finalKeys], metadata
 
 
@@ -175,7 +165,7 @@ def kfold_cross_validation(
     X_test,
     y_train,
     y_test,
-    metadata,
+    metadata: MetaData,
     models_params,
     n_splits=5,
     scoring="roc_auc",
@@ -342,7 +332,13 @@ def train_model_classification(
 
 
 def train_model_regression(
-    X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict
+    X_train,
+    X_test,
+    y_train,
+    y_test,
+    metadata: MetaData,
+    model_type: str,
+    model_params: dict,
 ):
     # Load the model dinamically
     ModelClass = dict(all_estimators())[model_type]
@@ -396,7 +392,7 @@ def log_on_mlflow(
     model_type: str,
     model: any,
     metrics: dict,
-    metadata: dict,
+    metadata: MetaData,
     feature_importance_df: pd.DataFrame,
 ):
     # Logging on MLflow
@@ -417,9 +413,9 @@ def log_on_mlflow(
             sk_model=model,
             artifact_path=model_type,
             registered_model_name=model_type,
-            metadata=metadata,
+            metadata=metadata.model_dump(),
         )
-        for key, value in metadata.items():
+        for key, value in metadata.model_dump().items():
             mlflow.set_tag(key, value)
 
         with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
@@ -432,11 +428,15 @@ def run(logger: Logger) -> None:
     settings = load_training_settings()
     setup_mlflow(logger=logger)
 
-    file = load_dataset(settings=settings, logger=logger)
-    # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all, settings.REMOVE_OUTLIERS)
-
-    metadata = set_metadata(file, settings)
-    df = preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
+    df = load_dataset(settings=settings, logger=logger)
+    metadata = MetaData(
+        start_time=df["timestamp"].max(),
+        end_time=df["timestamp"].min(),
+        features=settings.FINAL_FEATURES,
+        features_number=len(settings.FINAL_FEATURES),
+        remove_outliers=settings.REMOVE_OUTLIERS,
+    )
+    df = preprocessing(df, settings.TEMPLATE_COMPLEX_TYPES)
     df = filter_df(df, settings.FINAL_FEATURES)
     print(df)
 
