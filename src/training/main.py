@@ -436,7 +436,7 @@ def setup_mlflow(settings: AIRankerTrainingSettings) -> None:
 
 def run(logger: Logger) -> None:
     settings = load_airankertraining_settings()
-    settings = setup_mlflow(settings)
+    setup_mlflow(settings)
     classification_model_params = settings.CLASSIFICATION_MODELS
     regression_model_params = settings.REGRESSION_MODELS
     # Load the dataset (here the Iris example)
