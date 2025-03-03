@@ -1,16 +1,15 @@
-import json
-
-from pydantic import Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings
+from sklearn.utils import all_estimators
 
 
 class AIRankerTrainingSettings(BaseSettings):
     # Definition of environment variables with default values and description
     # Definizione delle variabili d'ambiente con valori di default e descrizioni
-    MLFLOW_TRACKING_URI: str = Field(
+    MLFLOW_TRACKING_URI: AnyHttpUrl = Field(
         default="http://localhost:5000", description="MLFlow tracking URI."
     )
-    EXPERIMENT_NAME: str = Field(
+    MLFLOW_EXPERIMENT_NAME: str = Field(
         default="Default", description="Name of the MLFlow experiment."
     )
 
@@ -44,10 +43,16 @@ class AIRankerTrainingSettings(BaseSettings):
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
     @classmethod
     def parse_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
-        """Verify that the content is a dictionary."""
+        """Verify models and parameters.
+
+        Model name (key) must belong to the scikit-learn library.
+        Value must be a dict."""
+        # Get all sklearn models (both classifiers and regressors)
         if isinstance(value, dict):
+            estimators = [i[0] for i in all_estimators()]
             for k, v in value.items():
-                assert isinstance(v, dict), f"Parameter {k} is not a dictionary."
+                assert k in estimators, f"Model '{k}' is not available in scikit-learn."
+                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary> {v}."
         return value
 
     class Config:
