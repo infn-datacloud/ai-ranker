@@ -24,7 +24,12 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 from sklearn.utils import all_estimators
 
-import processing
+from processing import (
+    filter_df,
+    load_dataset,
+    load_local_dataset,
+    preprocessing,
+)
 from settings import load_training_settings, setup_mlflow
 
 singleVM = [
@@ -61,11 +66,6 @@ jupyter = [
 all = singleVM + singleVMComplex + k8s + docker + jupyter
 simple = singleVM + docker
 complex = singleVMComplex + k8s + jupyter
-
-
-def load_local_dataset(filename: str):
-    df = pd.read_csv(f"../dataset/{filename}")
-    return df
 
 
 def set_metadata(df: pd.DataFrame, settings):
@@ -432,20 +432,12 @@ def run(logger: Logger) -> None:
     settings = load_training_settings()
     setup_mlflow(logger=logger)
 
-    # Load the dataset (here the Iris example)
-    if settings.LOCAL_MODE:
-        file = load_local_dataset(settings.LOCAL_DATASET)
-        # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all, settings.REMOVE_OUTLIERS)
-    else:
-        file = processing.load_dataset_from_kafka(
-            kafka_server_url=str(settings.KAFKA_URL),
-            topic=settings.KAFKA_TOPIC,
-            partition=0,
-            offset=765,
-        )
+    file = load_dataset(settings=settings, logger=logger)
+    # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all, settings.REMOVE_OUTLIERS)
+
     metadata = set_metadata(file, settings)
-    df = processing.preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
-    df = processing.filter_df(df, settings.FINAL_FEATURES)
+    df = preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)
+    df = filter_df(df, settings.FINAL_FEATURES)
     print(df)
 
     X_train, X_test, y_train, y_test = train_test_split(

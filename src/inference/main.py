@@ -9,7 +9,7 @@ import mlflow.sklearn
 import pandas as pd
 from kafka import KafkaConsumer
 
-import processing
+from processing import load_dataset_from_kafka, preprocessing
 from settings import load_inference_settings, setup_mlflow
 
 
@@ -21,11 +21,11 @@ def processMessage(message: dict, input_list: list, template_complex_types: list
     complexity = 0
     if template_name in template_complex_types:
         complexity = 1
-    df = processing.load_dataset_from_kafka(
+    df = load_dataset_from_kafka(
         kafka_server_url="localhost:9092", topic="training", partition=0, offset=765
     )
 
-    df = processing.preprocessing(df, template_complex_types)
+    df = preprocessing(df, template_complex_types)
     for el in message_providers:
         provider = el["provider_name"] + "-" + el["region_name"]
         df_filtered = df[
@@ -264,7 +264,7 @@ def run(logger: Logger):
 
     #### KAFKA SETUP
 
-    kafka_server_url = os.environ.get("KAFKA_HOSTNAME", settings.KAFKA_SERVER_URL)
+    kafka_server_url = os.environ.get("KAFKA_HOSTNAME", settings.KAFKA_URL)
     topic = os.environ.get("KAFKA_TOPIC", "test")
     template_complex_types = settings.TEMPLATE_COMPLEX_TYPES
     consumer = KafkaConsumer(

@@ -37,7 +37,27 @@ class MLFlowSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
-class AIRankerTrainingSettings(BaseSettings):
+class CommonSettings(BaseSettings):
+    LOCAL_MODE: bool = Field(
+        default=False, description="Perform the training using local dataset"
+    )
+    LOCAL_DATASET: str | None = Field(
+        default=None, description="Name of the local dataset."
+    )
+
+    KAFKA_URL: str = Field(
+        default="localhost:9092", description="Kafka server endpoint."
+    )
+    KAFKA_TRAINING_TOPIC: str = Field(
+        default="inference", description="Kafka default topic."
+    )
+
+    class Config:
+        env_file = ".env"  # Set variables from env files
+        env_file_encoding = "utf-8"
+
+
+class TrainingSettings(CommonSettings):
     CLASSIFICATION_MODELS: dict[str, dict] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
@@ -46,11 +66,6 @@ class AIRankerTrainingSettings(BaseSettings):
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
-
-    LOCAL_MODE: bool = Field(
-        default=False, description="Perform the training using local dataset"
-    )
-    LOCAL_DATASET: str = Field(default="", description="Name of the local dataset.")
 
     KFOLDS: int = Field(
         default=5, description="Number of folds for the KFold cross validation."
@@ -63,11 +78,6 @@ class AIRankerTrainingSettings(BaseSettings):
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
     )
-
-    KAFKA_URL: str = Field(
-        default="localhost:9092", description="Kafka server endpoint."
-    )
-    KAFKA_TOPIC: str = Field(default="training", description="Kafka default topic.")
 
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
     @classmethod
@@ -84,12 +94,8 @@ class AIRankerTrainingSettings(BaseSettings):
                 assert isinstance(v, dict), f"Value of '{k}' is not a dictionary> {v}."
         return value
 
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
 
-
-class InferenceSettings(BaseSettings):
+class InferenceSettings(CommonSettings):
     CLASSIFICATION_MODEL_NAME: str = Field(
         default="RandomForestClassifier", description="Name of the classification model"
     )
@@ -102,7 +108,6 @@ class InferenceSettings(BaseSettings):
     REGRESSION_MODEL_VERSION: str = Field(
         default="10", description="Version of regression model"
     )
-    KAFKA_SERVER_URL: str = Field(default="localhost:9092", description="Kafka url")
     MIN_REGRESSION_TIME: int = Field(default=500, description="Minimum regression time")
     MAX_REGRESSION_TIME: int = Field(
         default=5000, description="Maximim regression time"
@@ -133,14 +138,10 @@ class InferenceSettings(BaseSettings):
         decription="List of complex template",
     )
 
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
-
 
 # Function to load the settings
-def load_training_settings() -> AIRankerTrainingSettings:
-    return AIRankerTrainingSettings()
+def load_training_settings() -> TrainingSettings:
+    return TrainingSettings()
 
 
 # Function to load the settings
