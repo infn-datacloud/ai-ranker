@@ -67,7 +67,7 @@ class CommonSettings(BaseSettings):
 
 
 class TrainingSettings(CommonSettings):
-    """Definition of environment variables related to the MLFlow configuration."""
+    """Definition of environment variables related to the Training script."""
 
     CLASSIFICATION_MODELS: dict[str, dict] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
@@ -103,6 +103,7 @@ class TrainingSettings(CommonSettings):
 
 
 class InferenceSettings(CommonSettings):
+    """Definition of environment variables related to the Inference service"""
     CLASSIFICATION_MODEL_NAME: str = Field(
         default="RandomForestClassifier", description="Name of the classification model"
     )
