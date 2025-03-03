@@ -10,7 +10,7 @@ import pandas as pd
 from kafka import KafkaConsumer
 
 import processing
-from inference.settings import load_mlflow_settings
+from settings import load_inference_settings, setup_mlflow
 
 
 def processMessage(message: dict, input_list: list, template_complex_types: list):
@@ -235,7 +235,9 @@ def create_message(sorted_results: dict, deployment_uuid: str) -> str:
 
 
 def run(logger: Logger):
-    settings = load_mlflow_settings()
+    settings = load_inference_settings()
+    setup_mlflow(logger=logger)
+
     classification_model_name = settings.CLASSIFICATION_MODEL_NAME
     classification_model_version = settings.CLASSIFICATION_MODEL_VERSION
     regression_model_name = settings.REGRESSION_MODEL_NAME
@@ -246,10 +248,7 @@ def run(logger: Logger):
     threshold = settings.THRESHOLD
     classification_weight = settings.CLASSIFICATION_WEIGHT
     exact_flavour = settings.EXACT_FLAVOUR_PRECEDENCE
-    #### MLFLOW SETUP
 
-    mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", settings.MLFLOW_TRACKING_URI)
-    mlflow.set_tracking_uri(mlflow_tracking_uri)
     # Create the MLflow client
     client = mlflow.tracking.MlflowClient()
     if classification_model_version == "latest":

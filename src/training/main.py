@@ -25,8 +25,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.utils import all_estimators
 
 import processing
-from training import settings
-from training.settings import AIRankerTrainingSettings, load_airankertraining_settings
+from settings import load_training_settings, setup_mlflow
 
 singleVM = [
     "single-vm/single_vm.yaml",
@@ -116,7 +115,7 @@ def remove_outliers(X: pd.DataFrame, y: pd.DataFrame):
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def preprocess_dataset(filename: str, acceptedTemplate: list):
+def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
     file = load_local_dataset(filename)
     finalKeys = [
         "cpu_diff",
@@ -166,7 +165,7 @@ def preprocess_dataset(filename: str, acceptedTemplate: list):
         "end_time": file["creation_time"].iloc[-1],
         "features": file[finalKeys].columns.to_list(),
         "features_number": len(file[finalKeys].columns),
-        "remove outliers": settings.REMOVE_OUTLIERS,
+        "remove outliers": remove_outliers,
     }
     return file[finalKeys], metadata
 
@@ -429,38 +428,14 @@ def log_on_mlflow(
     print(f"Model {model_type} successfully logged on MLflow.")
 
 
-def setup_mlflow(*, settings: AIRankerTrainingSettings, logger: Logger) -> None:
-    """Set the mlflow server uri and experiment."""
-    logger.info("Setting up MLFlow service communication")
-    try:
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
-            settings.MLFLOW_HTTP_REQUEST_TIMEOUT
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_MAX_RETRIES.set(
-            settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER
-        )
-
-        mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
-        mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-    except mlflow.exceptions.MlflowException as e:
-        logger.error(e.message)
-        exit(1)
-
-
 def run(logger: Logger) -> None:
-    settings = load_airankertraining_settings()
-    setup_mlflow(settings=settings, logger=logger)
+    settings = load_training_settings()
+    setup_mlflow(logger=logger)
 
     # Load the dataset (here the Iris example)
     if settings.LOCAL_MODE:
         file = load_local_dataset(settings.LOCAL_DATASET)
-        # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all)
+        # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all, settings.REMOVE_OUTLIERS)
     else:
         file = processing.load_dataset_from_kafka(
             kafka_server_url=str(settings.KAFKA_URL),
