@@ -5,7 +5,7 @@ services:
     env_file:
       - .env
     volumes:
-      - /home/ubuntu/dataset:/dataset
+      - ./dataset:/dataset
     restart: unless-stopped
     command: bash -c "while true; do sleep 1; done"
     labels:
@@ -21,7 +21,7 @@ services:
     env_file:
       - .env
     volumes:
-      - /home/ubuntu/dataset:/dataset
+      - ./dataset:/dataset
     restart: unless-stopped
     command: python /app/src/main.py --inference
 
@@ -42,10 +42,10 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - /home/ubuntu/mlruns:/mlruns
-      - /home/ubuntu/mlartifacts:/mlartifacts
+      - ./mlruns:/mlruns
+      - ./mlartifacts:/mlartifacts
     command: mlflow server --host 0.0.0.0 --port 5000
-    restart: always
+    restart: unless-stopped
 
 volumes:
   training-logs:
