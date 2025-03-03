@@ -111,7 +111,13 @@ def load_dataset(
     )
 
 
-def preprocessing(df: pd.DataFrame, template_complex_types: list) -> pd.DataFrame:
+def preprocessing(
+    *,
+    df: pd.DataFrame,
+    complex_templates: list[str],
+    final_features: list[str],
+    logger: Logger,
+) -> pd.DataFrame:
     """Pre-process data in the dataframe.
 
     Calculate CPU diff as the difference between Quota (maximum value), used and
@@ -123,7 +129,14 @@ def preprocessing(df: pd.DataFrame, template_complex_types: list) -> pd.DataFram
 
     The deployment time, when the deployment fails is the average failure time of every
     attempt.
+
+    TODO: ...
+
+    Return dataframe with only desired features.
     """
+    logger.info("Pre-process data")
+    logger.debug("Initial Dataframe:\n%s", df)
+
     df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
     df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
     df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
@@ -165,6 +178,13 @@ def preprocessing(df: pd.DataFrame, template_complex_types: list) -> pd.DataFram
         ),
         axis=1,
     )
+
+    df = df[final_features]
+
+    logger.info("Pre-process completed")
+    logger.debug("Return only columns: %s", final_features)
+    logger.debug("Final dataframe: %s", df)
+
     return df
 
 
@@ -194,7 +214,3 @@ def calculate_avg_failure_time(group, row):
     )
     filtered_group = group[mask]
     return filtered_group[DF_DEP_TIME].mean() if not filtered_group.empty else 0.0
-
-
-def filter_df(df: pd.DataFrame, columns_to_return: list) -> pd.DataFrame:
-    return df[columns_to_return]
