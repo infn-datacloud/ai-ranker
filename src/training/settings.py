@@ -15,6 +15,19 @@ class AIRankerTrainingSettings(BaseSettings):
     MLFLOW_HTTP_REQUEST_TIMEOUT: int = Field(
         default=20, decription="Timeout in seconds for MLflow HTTP requests"
     )
+    MLFLOW_HTTP_REQUEST_MAX_RETRIES: int = Field(
+        default=5,
+        decription="Specifies the maximum number of retries with exponential backoff "
+        "for MLflow HTTP requests ",
+    )
+    MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR: int = Field(
+        default=2,
+        decription="Specifies the backoff increase factor between MLflow HTTP request",
+    )
+    MLFLOW_HTTP_REQUEST_BACKOFF_JITTER: float = Field(
+        default=1.0,
+        decription="Specifies the backoff jitter between MLflow HTTP request failures",
+    )
 
     CLASSIFICATION_MODELS: dict[str, dict] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "

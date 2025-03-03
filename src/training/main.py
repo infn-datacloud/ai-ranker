@@ -436,6 +436,16 @@ def setup_mlflow(*, settings: AIRankerTrainingSettings, logger: Logger) -> None:
         mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
             settings.MLFLOW_HTTP_REQUEST_TIMEOUT
         )
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_MAX_RETRIES.set(
+            settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES
+        )
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR.set(
+            settings.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR
+        )
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER.set(
+            settings.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER
+        )
+
         mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
     except mlflow.exceptions.MlflowException as e:
