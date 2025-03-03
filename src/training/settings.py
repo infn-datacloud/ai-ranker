@@ -42,7 +42,7 @@ class AIRankerTrainingSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
-    KAFKA_URL: AnyHttpUrl = Field(
+    KAFKA_URL: str = Field(
         default="localhost:9092", description="Kafka server endpoint."
     )
     KAFKA_TOPIC: str = Field(default="training", description="Kafka default topic.")
