@@ -242,8 +242,8 @@ def run(logger: Logger):
     classification_model_version = settings.CLASSIFICATION_MODEL_VERSION
     regression_model_name = settings.REGRESSION_MODEL_NAME
     regression_model_version = settings.REGRESSION_MODEL_VERSION
-    min_regression_time = settings.MIN_REGRESSION_TIME
-    max_regression_time = settings.MAX_REGRESSION_TIME
+    min_regression_time = settings.REGRESSION_MIN_TIME
+    max_regression_time = settings.REGRESSION_MAX_TIME
     filter_mode = settings.FILTER
     threshold = settings.THRESHOLD
     classification_weight = settings.CLASSIFICATION_WEIGHT

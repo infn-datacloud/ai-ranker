@@ -42,7 +42,7 @@ def load_dataset_from_kafka(
 
 
 def load_dataset(
-    settings: TrainingSettings | InferenceSettings, logger: Logger
+    *, settings: TrainingSettings | InferenceSettings, logger: Logger
 ) -> pd.DataFrame:
     """Load the dataset from a local one or from kafka."""
     if settings.LOCAL_MODE:
