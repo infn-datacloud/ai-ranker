@@ -9,7 +9,40 @@ import mlflow.sklearn
 import pandas as pd
 from kafka import KafkaConsumer
 
-from processing import load_dataset, preprocessing
+from processing import (
+    DF_AVG_FAIL_TIME,
+    DF_AVG_SUCCESS_TIME,
+    DF_COMPLEX,
+    DF_CPU_DIFF,
+    DF_DISK_DIFF,
+    DF_FAIL_PERC,
+    DF_GPU,
+    DF_INSTANCE_DIFF,
+    DF_PROVIDER,
+    DF_PUB_IPS_DIFF,
+    DF_RAM_DIFF,
+    MSG_CPU_QUOTA,
+    MSG_CPU_REQ,
+    MSG_CPU_USAGE,
+    MSG_DISK_QUOTA,
+    MSG_DISK_REQ,
+    MSG_DISK_USAGE,
+    MSG_GPU_REQ,
+    MSG_INSTANCE_QUOTA,
+    MSG_INSTANCE_REQ,
+    MSG_INSTANCE_USAGE,
+    MSG_PROVIDER_NAME,
+    MSG_PUB_IPS_QUOTA,
+    MSG_PUB_IPS_REQ,
+    MSG_PUB_IPS_USAGE,
+    MSG_RAM_QUOTA,
+    MSG_RAM_REQ,
+    MSG_RAM_USAGE,
+    MSG_REGION_NAME,
+    MSG_TEMPLATE_NAME,
+    load_dataset,
+    preprocessing,
+)
 from settings import load_inference_settings, setup_mlflow
 
 
@@ -19,7 +52,7 @@ def processMessage(
     input_message = {}
     exact_flavors_dict = {}
     message_providers = message["providers"]
-    template_name = message["template_name"]
+    template_name = message[MSG_TEMPLATE_NAME]
     complexity = 0
     if template_name in template_complex_types:
         complexity = 1
@@ -27,55 +60,50 @@ def processMessage(
 
     df = preprocessing(df, template_complex_types)
     for el in message_providers:
-        provider = el["provider_name"] + "-" + el["region_name"]
+        provider = el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
         df_filtered = df[
-            (df["template_name"].isin([template_name]))
-            & (df["provider"].isin([provider]))
+            (df[MSG_TEMPLATE_NAME].isin([template_name]))
+            & (df[DF_PROVIDER].isin([provider]))
         ]
         df_filtered = df_filtered.copy()
         avg_success_time = (
             float(
-                df_filtered.loc[df_filtered["timestamp"].idxmax(), "avg_success_time"]
+                df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_AVG_SUCCESS_TIME]
             )
             if not df_filtered.empty
             else 0.0
         )
         avg_failure_time = (
-            float(
-                df_filtered.loc[df_filtered["timestamp"].idxmax(), "avg_failure_time"]
-            )
+            float(df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_AVG_FAIL_TIME])
             if not df_filtered.empty
             else 0.0
         )
         failure_percentage = (
-            float(
-                df_filtered.loc[df_filtered["timestamp"].idxmax(), "failure_percentage"]
-            )
+            float(df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_FAIL_PERC])
             if not df_filtered.empty
             else 0.0
         )
         calculated_values = {
-            "cpu_diff": (el["vcpus_quota"] - el["vcpus_requ"]) - el["vcpus_usage"],
-            "ram_diff": (el["ram_gb_quota"] - el["ram_gb_requ"]) - el["ram_gb_usage"],
-            "storage_diff": (el["storage_gb_quota"] - el["storage_gb_requ"])
-            - el["storage_gb_usage"],
-            "instances_diff": (el["n_instances_quota"] - el["n_instances_requ"])
-            - el["n_instances_usage"],
-            "floatingips_diff": (el["floating_ips_quota"] - el["floating_ips_requ"])
-            - el["floating_ips_usage"],
-            "gpu": float(bool(el["gpus_requ"])),
+            DF_CPU_DIFF: (el[MSG_CPU_QUOTA] - el[MSG_CPU_REQ]) - el[MSG_CPU_USAGE],
+            DF_RAM_DIFF: (el[MSG_RAM_QUOTA] - el[MSG_RAM_REQ]) - el[MSG_RAM_USAGE],
+            DF_DISK_DIFF: (el[MSG_DISK_QUOTA] - el[MSG_DISK_REQ]) - el[MSG_DISK_USAGE],
+            DF_INSTANCE_DIFF: (el[MSG_INSTANCE_QUOTA] - el[MSG_INSTANCE_REQ])
+            - el[MSG_INSTANCE_USAGE],
+            DF_PUB_IPS_DIFF: (el[MSG_PUB_IPS_QUOTA] - el[MSG_PUB_IPS_REQ])
+            - el[MSG_PUB_IPS_USAGE],
+            DF_GPU: float(bool(el[MSG_GPU_REQ])),
             "test_failure_perc_30d": el["test_failure_perc_30d"],
             "test_failure_perc_7d": el["test_failure_perc_7d"],
             "test_failure_perc_1d": el["test_failure_perc_1d"],
-            "complexity": complexity,
+            DF_COMPLEX: complexity,
             "overbooking_ram": el["overbooking_ram"],
             "overbooking_cpu": el["overbooking_cpu"],
-            "avg_success_time": avg_success_time,
-            "avg_failure_time": avg_failure_time,
-            "failure_percentage": failure_percentage,
+            DF_AVG_SUCCESS_TIME: avg_success_time,
+            DF_AVG_FAIL_TIME: avg_failure_time,
+            DF_FAIL_PERC: failure_percentage,
         }
         exact_flavors_dict[provider] = 1.0 - float(
-            bool(el["n_instances_requ"] - el["exact_flavors"])
+            bool(el[MSG_INSTANCE_REQ] - el["exact_flavors"])
         )
         input_message[provider] = [
             calculated_values[key] for key in input_list if key in calculated_values
@@ -227,7 +255,7 @@ def get_features_input(client, model_name: str) -> list:
 
 def create_message(sorted_results: dict, deployment_uuid: str) -> str:
     ranked_providers = [
-        {"provider_name": provider, "value": value}
+        {MSG_PROVIDER_NAME: provider, "value": value}
         for provider, value in sorted_results.items()
     ]
     message = {"uuid": deployment_uuid, "ranked_providers": ranked_providers}
@@ -314,11 +342,11 @@ def run(logger: Logger):
                     sorted_results = {}
                     for el in message["providers"]:
                         sorted_results[
-                            el["provider_name"] + "-" + el["region_name"]
+                            el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
                         ] = 0.5
             else:
                 el = message["providers"][0]
-                provider = el["provider_name"] + "-" + el["region_name"]
+                provider = el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
                 sorted_results = {provider: 0.5}
             output_message = create_message(sorted_results, deployment_uuid)
             with open(
