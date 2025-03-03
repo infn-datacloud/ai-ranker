@@ -1,4 +1,3 @@
-import json
 from logging import Logger
 from tempfile import NamedTemporaryFile
 
@@ -26,7 +25,7 @@ from sklearn.utils import all_estimators
 
 import processing
 from training import settings
-from training.settings import load_airankertraining_settings
+from training.settings import AIRankerTrainingSettings, load_airankertraining_settings
 
 singleVM = [
     "single-vm/single_vm.yaml",
@@ -429,33 +428,17 @@ def log_on_mlflow(
     print(f"Model {model_type} successfully logged on MLflow.")
 
 
-def setup_mlflow():
-    # Load the settings
-    settings = load_airankertraining_settings()
-
-    # Set the mlflow server uri
-    mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
-
-    # Set the MLFlow experiment
-    mlflow.set_experiment(settings.EXPERIMENT_NAME)
-
-    # Get all sklearn models (both classifiers and regressors)
-    estimators = dict(all_estimators())
-
-    for model in (
-        settings.CLASSIFICATION_MODELS.keys() + settings.REGRESSION_MODELS.keys()
-    ):
-        if model not in estimators:
-            print(f"Error: the model '{model}' is not available in scikit-learn.")
-            return
-
-    return settings
+def setup_mlflow(settings: AIRankerTrainingSettings) -> None:
+    """Set the mlflow server uri and experiment."""
+    mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
+    mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
 
 
 def run(logger: Logger) -> None:
-    settings = setup_mlflow()
-    classification_model_params = json.loads(settings.CLASSIFICATION_MODELS)
-    regression_model_params = json.loads(settings.REGRESSION_MODELS)
+    settings = load_airankertraining_settings()
+    settings = setup_mlflow(settings)
+    classification_model_params = settings.CLASSIFICATION_MODELS
+    regression_model_params = settings.REGRESSION_MODELS
     # Load the dataset (here the Iris example)
     if settings.LOCAL_MODE:
         file = load_local_dataset(settings.LOCAL_DATASET)
