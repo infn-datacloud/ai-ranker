@@ -429,18 +429,23 @@ def log_on_mlflow(
     print(f"Model {model_type} successfully logged on MLflow.")
 
 
-def setup_mlflow(settings: AIRankerTrainingSettings) -> None:
+def setup_mlflow(*, settings: AIRankerTrainingSettings, logger: Logger) -> None:
     """Set the mlflow server uri and experiment."""
-    mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
-    mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-    mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
-        settings.MLFLOW_HTTP_REQUEST_TIMEOUT
-    )
+    logger.info("Setting up MLFlow service communication")
+    try:
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
+            settings.MLFLOW_HTTP_REQUEST_TIMEOUT
+        )
+        mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
+        mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
+    except mlflow.exceptions.MlflowException as e:
+        logger.error(e.message)
+        exit(1)
 
 
 def run(logger: Logger) -> None:
     settings = load_airankertraining_settings()
-    setup_mlflow(settings)
+    setup_mlflow(settings=settings, logger=logger)
 
     # Load the dataset (here the Iris example)
     if settings.LOCAL_MODE:
