@@ -38,7 +38,6 @@ from processing import (
     DF_VOL_DIFF,
     MSG_STATUS,
     STATUS_MAP,
-    filter_df,
     load_dataset,
     load_local_dataset,
     preprocessing,
@@ -448,9 +447,12 @@ def run(logger: Logger) -> None:
         features_number=len(settings.FINAL_FEATURES),
         remove_outliers=settings.REMOVE_OUTLIERS,
     )
-    df = preprocessing(df, settings.TEMPLATE_COMPLEX_TYPES)
-    df = filter_df(df, settings.FINAL_FEATURES)
-    print(df)
+    df = preprocessing(
+        df=df,
+        complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
+        final_features=settings.FINAL_FEATURES,
+        logger=logger,
+    )
 
     X_train, X_test, y_train, y_test = train_test_split(
         df.iloc[:, :-2], df.iloc[:, -2:-1], test_size=0.2, random_state=42
