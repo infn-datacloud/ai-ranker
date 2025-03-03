@@ -9,11 +9,13 @@ import mlflow.sklearn
 import pandas as pd
 from kafka import KafkaConsumer
 
-from processing import load_dataset_from_kafka, preprocessing
+from processing import load_dataset, preprocessing
 from settings import load_inference_settings, setup_mlflow
 
 
-def processMessage(message: dict, input_list: list, template_complex_types: list):
+def processMessage(
+    message: dict, input_list: list, template_complex_types: list, settings, logger
+):
     input_message = {}
     exact_flavors_dict = {}
     message_providers = message["providers"]
@@ -21,9 +23,7 @@ def processMessage(message: dict, input_list: list, template_complex_types: list
     complexity = 0
     if template_name in template_complex_types:
         complexity = 1
-    df = load_dataset_from_kafka(
-        kafka_server_url="localhost:9092", topic="training", partition=0, offset=765
-    )
+    df = load_dataset(settings=settings, logger=logger)
 
     df = preprocessing(df, template_complex_types)
     for el in message_providers:
@@ -287,7 +287,7 @@ def run(logger: Logger):
             if len(message["providers"]) != 1:
                 try:
                     input_dict, exact_flavors_dict = processMessage(
-                        message, feature_input, template_complex_types
+                        message, feature_input, template_complex_types, settings, logger
                     )
                     start_time = time.time()
                     sorted_results = process_inference(
