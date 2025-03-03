@@ -25,6 +25,19 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.utils import all_estimators
 
 from processing import (
+    DF_COMPLEX,
+    DF_CPU_DIFF,
+    DF_DISK_DIFF,
+    DF_FAIL_PERC,
+    DF_GPU,
+    DF_INSTANCE_DIFF,
+    DF_PUB_IPS_DIFF,
+    DF_RAM_DIFF,
+    DF_STATUS,
+    DF_TIMESTAMP,
+    DF_VOL_DIFF,
+    MSG_STATUS,
+    STATUS_MAP,
     filter_df,
     load_dataset,
     load_local_dataset,
@@ -108,29 +121,28 @@ def remove_outliers(X: pd.DataFrame, y: pd.DataFrame):
 def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
     file = load_local_dataset(filename)
     finalKeys = [
-        "cpu_diff",
-        "ram_diff",
-        "storage_diff",
-        "instances_diff",
-        "floatingips_diff",
-        "gpu",
+        DF_CPU_DIFF,
+        DF_RAM_DIFF,
+        DF_DISK_DIFF,
+        DF_INSTANCE_DIFF,
+        DF_PUB_IPS_DIFF,
+        DF_GPU,
         "test_failure_perc_30d",
         "overbooking_ram",
         "avg_deployment_time",
-        "failure_percentage",
-        "complexity",
-        "status",
+        DF_FAIL_PERC,
+        DF_COMPLEX,
+        DF_STATUS,
         "difference",
     ]
-    file["complexity"] = file["selected_template"].isin(complex).astype(int)
-    file.loc[file["selected_template"].isin(simple), "complexity"] = 0
+    file[DF_COMPLEX] = file["selected_template"].isin(complex).astype(int)
+    file.loc[file["selected_template"].isin(simple), DF_COMPLEX] = 0
     if acceptedTemplate != all:
         file = file[file["selected_template"].isin(acceptedTemplate)]
-    mapStatus = {"CREATE_COMPLETE": 0, "CREATE_FAILED": 1}
     mapTrueFalse = {True: 1, False: 0, pd.NA: 0}
     mapSla = {"TROPPO PRESTO!!": 0, "No matching entries": 0}
-    file["status"] = file["status"].replace(mapStatus).astype(int)
-    file["gpu"] = file["gpu"].replace(mapTrueFalse).astype(int)
+    file[DF_STATUS] = file[MSG_STATUS].replace(STATUS_MAP).astype(int)
+    file[DF_GPU] = file[DF_GPU].replace(mapTrueFalse).astype(int)
     # file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
     file["test_failure_perc_30d"] = (
         file["sla_failure_percentage"].replace(mapSla).astype(float)
@@ -138,18 +150,18 @@ def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
     file = file[file["avg_deployment_time"].notna()]
     # file = file[file['difference'] < 10000]
 
-    file["cpu_diff"] = (file["quota_cores"] - file["vcpus"]) - file["requested_cpu"]
-    file["ram_diff"] = (file["quota_ram"] - file["ram"]) - file["requested_ram"]
-    file["storage_diff"] = (file["quota_archived"] - file["archived"]) - file[
+    file[DF_CPU_DIFF] = (file["quota_cores"] - file["vcpus"]) - file["requested_cpu"]
+    file[DF_RAM_DIFF] = (file["quota_ram"] - file["ram"]) - file["requested_ram"]
+    file[DF_DISK_DIFF] = (file["quota_archived"] - file["archived"]) - file[
         "requested_storage"
     ]
-    file["instances_diff"] = (file["quota_instances"] - file["instances"]) - file[
+    file[DF_INSTANCE_DIFF] = (file["quota_instances"] - file["instances"]) - file[
         "requested_nodes"
     ]
-    file["volumes_diff"] = (file["quota_volumes"] - file["volumes"]) - file[
+    file[DF_VOL_DIFF] = (file["quota_volumes"] - file["volumes"]) - file[
         "requested_volumes"
     ]
-    file["floatingips_diff"] = file["quota_floatingips"] - file["floatingips"]
+    file[DF_PUB_IPS_DIFF] = file["quota_floatingips"] - file["floatingips"]
     metadata = MetaData(
         start_time=file["creation_time"].iloc[0],
         end_time=file["creation_time"].iloc[-1],
@@ -426,12 +438,12 @@ def log_on_mlflow(
 
 def run(logger: Logger) -> None:
     settings = load_training_settings()
-    setup_mlflow(logger=logger)
+    # setup_mlflow(logger=logger)
 
     df = load_dataset(settings=settings, logger=logger)
     metadata = MetaData(
-        start_time=df["timestamp"].max(),
-        end_time=df["timestamp"].min(),
+        start_time=df[DF_TIMESTAMP].max(),
+        end_time=df[DF_TIMESTAMP].min(),
         features=settings.FINAL_FEATURES,
         features_number=len(settings.FINAL_FEATURES),
         remove_outliers=settings.REMOVE_OUTLIERS,
