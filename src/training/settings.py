@@ -12,6 +12,9 @@ class AIRankerTrainingSettings(BaseSettings):
     MLFLOW_EXPERIMENT_NAME: str = Field(
         default="Default", description="Name of the MLFlow experiment."
     )
+    MLFLOW_HTTP_REQUEST_TIMEOUT: int = Field(
+        default=20, decription="Timeout in seconds for MLflow HTTP requests"
+    )
 
     CLASSIFICATION_MODELS: dict[str, dict] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
@@ -38,11 +41,6 @@ class AIRankerTrainingSettings(BaseSettings):
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
     )
-
-    MLFLOW_HTTP_REQUEST_TIMEOUT: int = Field(
-        default=20, decription="Timeout in seconds for MLflow HTTP requests"
-    )
-
 
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
     @classmethod
