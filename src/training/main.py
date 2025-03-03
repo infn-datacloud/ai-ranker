@@ -453,7 +453,10 @@ def run(logger: Logger) -> None:
         # file, metadata = preprocess_dataset(settings.LOCAL_DATASET, all)
     else:
         file = processing.load_dataset_from_kafka(
-            kafka_server_url="localhost:9092", topic="training", partition=0, offset=765
+            kafka_server_url=str(settings.KAFKA_URL),
+            topic=settings.KAFKA_TOPIC,
+            partition=0,
+            offset=765,
         )
     metadata = set_metadata(file, settings)
     df = processing.preprocessing(file, settings.TEMPLATE_COMPLEX_TYPES)

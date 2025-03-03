@@ -42,6 +42,11 @@ class AIRankerTrainingSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
+    KAFKA_URL: AnyHttpUrl = Field(
+        default="localhost:9092", description="Kafka server endpoint."
+    )
+    KAFKA_TOPIC: str = Field(default="training", description="Kafka default topic.")
+
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
     @classmethod
     def parse_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
