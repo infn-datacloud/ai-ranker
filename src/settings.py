@@ -36,6 +36,7 @@ class MLFlowSettings(BaseSettings):
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 class CommonSettings(BaseSettings):
@@ -62,6 +63,7 @@ class CommonSettings(BaseSettings):
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 class TrainingSettings(CommonSettings):
