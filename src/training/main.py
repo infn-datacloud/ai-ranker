@@ -432,6 +432,7 @@ def setup_mlflow(settings: AIRankerTrainingSettings) -> None:
     """Set the mlflow server uri and experiment."""
     mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
     mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
+    mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(settings.MLFLOW_HTTP_REQUEST_TIMEOUT)
 
 
 def run(logger: Logger) -> None:
