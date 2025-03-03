@@ -8,7 +8,8 @@ from sklearn.utils import all_estimators
 
 
 class MLFlowSettings(BaseSettings):
-    # Definition of environment variables with default values and description
+    """Definition of environment variables related to the MLFlow configuration."""
+
     MLFLOW_TRACKING_URI: AnyHttpUrl = Field(
         default="http://localhost:5000", description="MLFlow tracking URI."
     )
@@ -38,6 +39,8 @@ class MLFlowSettings(BaseSettings):
 
 
 class CommonSettings(BaseSettings):
+    """Common settings"""
+
     LOCAL_MODE: bool = Field(
         default=False, description="Perform the training using local dataset"
     )
@@ -52,12 +55,18 @@ class CommonSettings(BaseSettings):
         default="inference", description="Kafka default topic."
     )
 
+    TEMPLATE_COMPLEX_TYPES: list = Field(
+        default_factory=list, decription="List of complex template"
+    )
+
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
 
 
 class TrainingSettings(CommonSettings):
+    """Definition of environment variables related to the MLFlow configuration."""
+
     CLASSIFICATION_MODELS: dict[str, dict] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
@@ -73,10 +82,6 @@ class TrainingSettings(CommonSettings):
     REMOVE_OUTLIERS: bool = Field(default=False, description="Remove outliers")
     FINAL_FEATURES: list = Field(
         description="List of final features in the processed Dataset",
-    )
-
-    TEMPLATE_COMPLEX_TYPES: list = Field(
-        default_factory=list, decription="List of complex template"
     )
 
     @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
@@ -99,43 +104,29 @@ class InferenceSettings(CommonSettings):
     CLASSIFICATION_MODEL_NAME: str = Field(
         default="RandomForestClassifier", description="Name of the classification model"
     )
-    REGRESSION_MODEL_NAME: str = Field(
-        default="RandomForestRegressor", description="Name of the regressor model"
-    )
     CLASSIFICATION_MODEL_VERSION: str = Field(
         default="10", description="Version of classification model"
+    )
+    CLASSIFICATION_WEIGHT: float = Field(
+        default=0.75, description="Classification weight"
+    )
+
+    REGRESSION_MODEL_NAME: str = Field(
+        default="RandomForestRegressor", description="Name of the regressor model"
     )
     REGRESSION_MODEL_VERSION: str = Field(
         default="10", description="Version of regression model"
     )
-    MIN_REGRESSION_TIME: int = Field(default=500, description="Minimum regression time")
-    MAX_REGRESSION_TIME: int = Field(
+    REGRESSION_MIN_TIME: int = Field(default=500, description="Minimum regression time")
+    REGRESSION_MAX_TIME: int = Field(
         default=5000, description="Maximim regression time"
     )
+
     FILTER: bool = Field(default=False, description="Filter results undert threshold")
     THRESHOLD: float = Field(default=0.7, description="Threshold to filter out score")
     EXACT_FLAVOUR_PRECEDENCE: bool = Field(
         default=False,
         description="Sort providers putting them with exact flavour in front",
-    )
-    CLASSIFICATION_WEIGHT: float = Field(
-        default=0.75, description="Classification weight"
-    )
-    TEMPLATE_COMPLEX_TYPES: list = Field(
-        default=[
-            "INDIGO IAM as a Service",
-            "Elasticsearch and Kibana",
-            "Kubernates cluster",
-            "Spark + Jupyter cluster",
-            "HTCondor mini",
-            "HTCondor cluster",
-            "Jupyter with persistence for Notebooks",
-            "Jupyter + Matlab (with persistence for Notebooks)",
-            "Computational enviroment for Machine Learning INFN (ML_INFN)",
-            "Working Station for CYGNO experiment",
-            "Sync&Share aaS",
-        ],
-        decription="List of complex template",
     )
 
 
