@@ -6,6 +6,12 @@
 **/__pycache__
 **/*.pyc
 
+# MacOS
 .DS_Store
 .env
 mlruns
+
+# Data to ignore. Mounted as volumes
+**/dataset/
+**/mlruns/
+**/mlartifacts/
