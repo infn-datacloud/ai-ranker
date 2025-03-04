@@ -11,4 +11,5 @@ if __name__ == "__main__":
         training_run(logger)
     elif args.inference:
         inference_run(logger)
-    logger.warning("Neither --training or --inference arguments have been defined")
+    else:
+        logger.warning("Neither --training or --inference arguments have been defined")
