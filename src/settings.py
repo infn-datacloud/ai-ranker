@@ -82,6 +82,12 @@ class TrainingSettings(CommonSettings):
         default=5, description="Number of folds for the KFold cross validation."
     )
     REMOVE_OUTLIERS: bool = Field(default=False, description="Remove outliers")
+    TEST_SIZE: float = Field(
+        default=0.2,
+        lt=1.0,
+        gt=0.0,
+        description="Test size with respect to the whole dataset. Range (0, 1).",
+    )
     FINAL_FEATURES: list = Field(
         description="List of final features in the processed Dataset",
     )

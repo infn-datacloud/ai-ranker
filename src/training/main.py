@@ -374,7 +374,10 @@ def run(logger: Logger) -> None:
     )
 
     x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :-2], df.iloc[:, -2:-1], test_size=0.2, random_state=42
+        df.iloc[:, :-2],
+        df.iloc[:, -2:-1],
+        test_size=settings.TEST_SIZE,
+        random_state=42,
     )
     if settings.REMOVE_OUTLIERS:
         x_train_cleaned, y_train_cleaned = remove_outliers(x_train, y_train)
