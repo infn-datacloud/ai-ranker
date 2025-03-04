@@ -45,13 +45,13 @@ from processing import (
 from settings import load_training_settings, setup_mlflow
 from training.models import MetaData
 
-singleVM = [
+single_vm = [
     "single-vm/single_vm.yaml",
     "single-vm/single_vm_with_volume.yaml",
     "single-vm/private-net/single_vm.yaml",
     "single-vm/private-net/single_vm_with_volume.yaml",
 ]
-singleVMComplex = [
+single_vm_complex = [
     "single-vm/cloud_storage_service.yaml",
     "single-vm/elasticsearch_kibana.yaml",
     "single-vm/iam_voms-aa.yaml",
@@ -76,9 +76,9 @@ jupyter = [
     "jupyter/cygno_experiment.yaml",
     "jupyter/private-net/jupyter_vm.yaml ",
 ]
-all = singleVM + singleVMComplex + k8s + docker + jupyter
-simple = singleVM + docker
-complex = singleVMComplex + k8s + jupyter
+all = single_vm + single_vm_complex + k8s + docker + jupyter
+simple = single_vm + docker
+complex = single_vm_complex + k8s + jupyter
 
 
 def remove_outliers_from_dataframe(
@@ -107,9 +107,9 @@ def remove_outliers(
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
+def preprocess_dataset(filename: str, accepted_template: list, remove_outliers):
     file = load_local_dataset(filename)
-    finalKeys = [
+    final_keys = [
         DF_CPU_DIFF,
         DF_RAM_DIFF,
         DF_DISK_DIFF,
@@ -126,15 +126,15 @@ def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
     ]
     file[DF_COMPLEX] = file["selected_template"].isin(complex).astype(int)
     file.loc[file["selected_template"].isin(simple), DF_COMPLEX] = 0
-    if acceptedTemplate != all:
-        file = file[file["selected_template"].isin(acceptedTemplate)]
-    mapTrueFalse = {True: 1, False: 0, pd.NA: 0}
-    mapSla = {"TROPPO PRESTO!!": 0, "No matching entries": 0}
+    if accepted_template != all:
+        file = file[file["selected_template"].isin(accepted_template)]
+    map_true_false = {True: 1, False: 0, pd.NA: 0}
+    map_sla = {"TROPPO PRESTO!!": 0, "No matching entries": 0}
     file[DF_STATUS] = file[MSG_STATUS].replace(STATUS_MAP).astype(int)
-    file[DF_GPU] = file[DF_GPU].replace(mapTrueFalse).astype(int)
-    # file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(mapSla).astype(float)
+    file[DF_GPU] = file[DF_GPU].replace(map_true_false).astype(int)
+    # file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(map_sla).astype(float)
     file["test_failure_perc_30d"] = (
-        file["sla_failure_percentage"].replace(mapSla).astype(float)
+        file["sla_failure_percentage"].replace(map_sla).astype(float)
     )
     file = file[file["avg_deployment_time"].notna()]
     # file = file[file['difference'] < 10000]
@@ -154,16 +154,16 @@ def preprocess_dataset(filename: str, acceptedTemplate: list, remove_outliers):
     metadata = MetaData(
         start_time=file["creation_time"].iloc[0],
         end_time=file["creation_time"].iloc[-1],
-        features=file[finalKeys].columns.to_list(),
-        features_number=len(file[finalKeys].columns),
+        features=file[final_keys].columns.to_list(),
+        features_number=len(file[final_keys].columns),
         remove_outliers=remove_outliers,
     )
-    return file[finalKeys], metadata
+    return file[final_keys], metadata
 
 
 def kfold_cross_validation(
-    X_train,
-    X_test,
+    x_train,
+    x_test,
     y_train,
     y_test,
     metadata: MetaData,
@@ -171,7 +171,7 @@ def kfold_cross_validation(
     n_splits=5,
     scoring="roc_auc",
 ):
-    X = X_train
+    x = x_train
     y = y_train
 
     # Initialize KFold
@@ -196,11 +196,11 @@ def kfold_cross_validation(
         model = ModelClass(**params)
 
         # Scale the features
-        X_scaled = scaler.fit_transform(X)
+        x_scaled = scaler.fit_transform(x)
 
         # Perform cross-validation
         scores = cross_val_score(
-            model, X_scaled, y.values.ravel(), cv=kf, scoring=scoring
+            model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
         )
 
         # Store the scores in the dictionary
@@ -213,8 +213,8 @@ def kfold_cross_validation(
     print(f"Model selected for training: {best_model_name}")
     if issubclass(all_models.get(best_model_name), ClassifierMixin):
         train_model_classification(
-            X_train,
-            X_test,
+            x_train,
+            x_test,
             y_train,
             y_test,
             metadata,
@@ -223,8 +223,8 @@ def kfold_cross_validation(
         )
     elif issubclass(all_models.get(best_model_name), RegressorMixin):
         train_model_regression(
-            X_train,
-            X_test,
+            x_train,
+            x_test,
             y_train,
             y_test,
             metadata,
@@ -235,7 +235,7 @@ def kfold_cross_validation(
     return model_scores
 
 
-def get_feature_importance(model, columns, X_train_scaled):
+def get_feature_importance(model, columns, x_train_scaled):
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
         feature_importances = model.feature_importances_
@@ -256,8 +256,8 @@ def get_feature_importance(model, columns, X_train_scaled):
     else:
         try:
             explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X_train_scaled)
-            shap.summary_plot(shap_values, X_train_scaled)
+            shap_values = explainer.shap_values(x_train_scaled)
+            shap.summary_plot(shap_values, x_train_scaled)
             # Gives mean values of feayure importance
             shap_importance = np.mean(np.abs(shap_values), axis=0)
             feature_importance_df = pd.DataFrame(
@@ -270,7 +270,7 @@ def get_feature_importance(model, columns, X_train_scaled):
 
 
 def train_model_classification(
-    X_train, X_test, y_train, y_test, metadata, model_type: str, model_params: dict
+    x_train, x_test, y_train, y_test, metadata, model_type: str, model_params: dict
 ):
     """
     Function to train a generic sklearn ML model
@@ -291,36 +291,36 @@ def train_model_classification(
         return
 
     scaler = RobustScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
 
     # Train the model
-    model.fit(X_train_scaled, y_train.values.ravel())
+    model.fit(x_train_scaled, y_train.values.ravel())
 
     # Get feature importance
     feature_importance_df = get_feature_importance(
-        model, X_train.columns, X_train_scaled
+        model, x_train.columns, x_train_scaled
     )
 
     if feature_importance_df is not None:
         print(feature_importance_df)
 
     # Do predictions
-    y_pred_train = model.predict(X_train_scaled)
-    y_pred_test = model.predict(X_test_scaled)
+    y_pred_train = model.predict(x_train_scaled)
+    y_pred_test = model.predict(x_test_scaled)
 
     # Compute the accuracy if the model is a classifier
     if isinstance(model, ClassifierMixin):
         metrics = {
             "Accuracy train": accuracy_score(y_train, y_pred_train),
             "auc train": roc_auc_score(
-                y_train, model.predict_proba(X_train_scaled)[:, 1]
+                y_train, model.predict_proba(x_train_scaled)[:, 1]
             ),
             "F1 train": f1_score(y_train, y_pred_train, average="binary"),
             "Precision train": precision_score(y_train, y_pred_train, average="binary"),
             "Recall train": recall_score(y_train, y_pred_train, average="binary"),
             "Accuracy test": accuracy_score(y_test, y_pred_test),
-            "auc test": roc_auc_score(y_test, model.predict_proba(X_test_scaled)[:, 1]),
+            "auc test": roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
             "F1 test": f1_score(y_test, y_pred_test, average="binary"),
             "Precision test": precision_score(y_test, y_pred_test, average="binary"),
             "Recall test": recall_score(y_test, y_pred_test, average="binary"),
@@ -333,8 +333,8 @@ def train_model_classification(
 
 
 def train_model_regression(
-    X_train,
-    X_test,
+    x_train,
+    x_test,
     y_train,
     y_test,
     metadata: MetaData,
@@ -352,23 +352,23 @@ def train_model_regression(
         return
 
     scaler = RobustScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
 
     # Train the model
-    model.fit(X_train_scaled, y_train.values.ravel())
+    model.fit(x_train_scaled, y_train.values.ravel())
 
     # Get feature importance
     feature_importance_df = get_feature_importance(
-        model, X_train.columns, X_train_scaled
+        model, x_train.columns, x_train_scaled
     )
 
     if feature_importance_df is not None:
         print(feature_importance_df)
 
     # Do predictions
-    y_train_pred = model.predict(X_train_scaled)
-    y_test_pred = model.predict(X_test_scaled)
+    y_train_pred = model.predict(x_train_scaled)
+    y_test_pred = model.predict(x_test_scaled)
 
     if isinstance(model, RegressorMixin):
         # Compute metrics
@@ -444,19 +444,20 @@ def run(logger: Logger) -> None:
         logger=logger,
     )
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :-2], df.iloc[:, -2:-1], test_size=0.2, random_state=42
     )
     if settings.REMOVE_OUTLIERS:
-        X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
+        x_train_cleaned, y_train_cleaned = remove_outliers(x_train, y_train)
     else:
-        X_train_cleaned, y_train_cleaned = X_train, y_train
+        x_train_cleaned, y_train_cleaned = x_train, y_train
+
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
         model = settings.CLASSIFICATION_MODELS.keys()[0]
         # Train the model chosen by the user
         train_model_classification(
-            X_train_cleaned,
-            X_test,
+            x_train_cleaned,
+            x_test,
             y_train_cleaned,
             y_test,
             metadata,
@@ -466,8 +467,8 @@ def run(logger: Logger) -> None:
     else:
         # Perform KFold cross validation
         kfold_cross_validation(
-            X_train_cleaned,
-            X_test,
+            x_train_cleaned,
+            x_test,
             y_train_cleaned,
             y_test,
             metadata,
@@ -476,19 +477,19 @@ def run(logger: Logger) -> None:
             scoring="roc_auc",
         )
 
-    X_train, X_test, y_train, y_test = train_test_split(
+    x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :-2], df.iloc[:, -1:], test_size=0.2, random_state=42
     )
     if settings.REMOVE_OUTLIERS:
-        X_train_cleaned, y_train_cleaned = remove_outliers(X_train, y_train)
+        x_train_cleaned, y_train_cleaned = remove_outliers(x_train, y_train)
     else:
-        X_train_cleaned, y_train_cleaned = X_train, y_train
+        x_train_cleaned, y_train_cleaned = x_train, y_train
     if len(settings.REGRESSION_MODELS.keys()) == 1:
         model = settings.REGRESSION_MODELS.keys()[0]
         # Train the model chosen by the user
         train_model_regression(
-            X_train_cleaned,
-            X_test,
+            x_train_cleaned,
+            x_test,
             y_train_cleaned,
             y_test,
             metadata,
@@ -498,8 +499,8 @@ def run(logger: Logger) -> None:
     else:
         # Perform KFold cross validation
         kfold_cross_validation(
-            X_train_cleaned,
-            X_test,
+            x_train_cleaned,
+            x_test,
             y_train_cleaned,
             y_test,
             metadata,
