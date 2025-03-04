@@ -4,6 +4,7 @@ import mlflow
 import mlflow.environment_variables
 from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings
+from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
 
 
@@ -92,19 +93,46 @@ class TrainingSettings(CommonSettings):
         description="List of final features in the processed Dataset",
     )
 
-    @field_validator("CLASSIFICATION_MODELS", "REGRESSION_MODELS", mode="before")
+    @field_validator("CLASSIFICATION_MODELS", mode="before")
     @classmethod
-    def parse_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
+    def parse_classification_models_params(
+        cls, value: dict[str, dict]
+    ) -> dict[str, dict]:
         """Verify models and parameters.
 
         Model name (key) must belong to the scikit-learn library.
         Value must be a dict."""
         # Get all sklearn models (both classifiers and regressors)
         if isinstance(value, dict):
-            estimators = [i[0] for i in all_estimators()]
+            estimators = dict(all_estimators())
             for k, v in value.items():
-                assert k in estimators, f"Model '{k}' is not available in scikit-learn."
-                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary> {v}."
+                assert k in estimators.keys(), (
+                    f"Model '{k}' is not available in scikit-learn."
+                )
+                assert isinstance(estimators[k], ClassifierMixin), (
+                    f"Model '{k}' in not a Classifier model"
+                )
+                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
+        return value
+
+    @field_validator("REGRESSION_MODELS", mode="before")
+    @classmethod
+    def parse_regression_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
+        """Verify models and parameters.
+
+        Model name (key) must belong to the scikit-learn library.
+        Value must be a dict."""
+        # Get all sklearn models (both classifiers and regressors)
+        if isinstance(value, dict):
+            estimators = dict(all_estimators())
+            for k, v in value.items():
+                assert k in estimators.keys(), (
+                    f"Model '{k}' is not available in scikit-learn."
+                )
+                assert isinstance(estimators[k], RegressorMixin), (
+                    f"Model '{k}' is not a Regressor model"
+                )
+                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
         return value
 
 
