@@ -24,24 +24,7 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 from sklearn.utils import all_estimators
 
-from processing import (
-    DF_COMPLEX,
-    DF_CPU_DIFF,
-    DF_DISK_DIFF,
-    DF_FAIL_PERC,
-    DF_GPU,
-    DF_INSTANCE_DIFF,
-    DF_PUB_IPS_DIFF,
-    DF_RAM_DIFF,
-    DF_STATUS,
-    DF_TIMESTAMP,
-    DF_VOL_DIFF,
-    MSG_STATUS,
-    STATUS_MAP,
-    load_dataset,
-    load_local_dataset,
-    preprocessing,
-)
+from processing import DF_TIMESTAMP, load_dataset, preprocessing
 from settings import load_training_settings, setup_mlflow
 from training.models import MetaData
 
@@ -105,60 +88,6 @@ def remove_outliers(
     combined = pd.concat([x, y], axis=1)
     filtered = remove_outliers_from_dataframe(combined, q1=q1, q3=q3, k=k)
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
-
-
-def preprocess_dataset(filename: str, accepted_template: list, remove_outliers):
-    file = load_local_dataset(filename)
-    final_keys = [
-        DF_CPU_DIFF,
-        DF_RAM_DIFF,
-        DF_DISK_DIFF,
-        DF_INSTANCE_DIFF,
-        DF_PUB_IPS_DIFF,
-        DF_GPU,
-        "test_failure_perc_30d",
-        "overbooking_ram",
-        "avg_deployment_time",
-        DF_FAIL_PERC,
-        DF_COMPLEX,
-        DF_STATUS,
-        "difference",
-    ]
-    file[DF_COMPLEX] = file["selected_template"].isin(complex).astype(int)
-    file.loc[file["selected_template"].isin(simple), DF_COMPLEX] = 0
-    if accepted_template != all:
-        file = file[file["selected_template"].isin(accepted_template)]
-    map_true_false = {True: 1, False: 0, pd.NA: 0}
-    map_sla = {"TROPPO PRESTO!!": 0, "No matching entries": 0}
-    file[DF_STATUS] = file[MSG_STATUS].replace(STATUS_MAP).astype(int)
-    file[DF_GPU] = file[DF_GPU].replace(map_true_false).astype(int)
-    # file["sla_failure_percentage"] = file["sla_failure_percentage"].replace(map_sla).astype(float)
-    file["test_failure_perc_30d"] = (
-        file["sla_failure_percentage"].replace(map_sla).astype(float)
-    )
-    file = file[file["avg_deployment_time"].notna()]
-    # file = file[file['difference'] < 10000]
-
-    file[DF_CPU_DIFF] = (file["quota_cores"] - file["vcpus"]) - file["requested_cpu"]
-    file[DF_RAM_DIFF] = (file["quota_ram"] - file["ram"]) - file["requested_ram"]
-    file[DF_DISK_DIFF] = (file["quota_archived"] - file["archived"]) - file[
-        "requested_storage"
-    ]
-    file[DF_INSTANCE_DIFF] = (file["quota_instances"] - file["instances"]) - file[
-        "requested_nodes"
-    ]
-    file[DF_VOL_DIFF] = (file["quota_volumes"] - file["volumes"]) - file[
-        "requested_volumes"
-    ]
-    file[DF_PUB_IPS_DIFF] = file["quota_floatingips"] - file["floatingips"]
-    metadata = MetaData(
-        start_time=file["creation_time"].iloc[0],
-        end_time=file["creation_time"].iloc[-1],
-        features=file[final_keys].columns.to_list(),
-        features_number=len(file[final_keys].columns),
-        remove_outliers=remove_outliers,
-    )
-    return file[final_keys], metadata
 
 
 def kfold_cross_validation(
