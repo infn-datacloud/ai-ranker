@@ -90,80 +90,6 @@ def remove_outliers(
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def kfold_cross_validation(
-    x_train,
-    x_test,
-    y_train,
-    y_test,
-    metadata: MetaData,
-    models_params,
-    n_splits=5,
-    scoring="roc_auc",
-):
-    x = x_train
-    y = y_train
-
-    # Initialize KFold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-
-    # Dictionary to store scores
-    model_scores = {}
-    mean_scores = {}
-    # Get all estimators
-    all_models = dict(all_estimators())
-
-    # Initialize RobustScaler
-    scaler = RobustScaler()
-
-    for model_name, params in models_params.items():
-        # Fetch the model class
-        ModelClass = all_models.get(model_name)
-        if ModelClass is None:
-            raise ValueError(f"Model {model_name} not found in sklearn estimators.")
-
-        # Instantiate the model with parameters
-        model = ModelClass(**params)
-
-        # Scale the features
-        x_scaled = scaler.fit_transform(x)
-
-        # Perform cross-validation
-        scores = cross_val_score(
-            model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
-        )
-
-        # Store the scores in the dictionary
-        model_scores[model_name] = scores
-        mean_scores[model_name] = np.mean(scores)
-        print(
-            f"Model: {model_name}, Mean {scoring}: {np.mean(scores):.4f}, Std: {np.std(scores):.4f}"
-        )
-    best_model_name = max(mean_scores, key=mean_scores.get)
-    print(f"Model selected for training: {best_model_name}")
-    if issubclass(all_models.get(best_model_name), ClassifierMixin):
-        train_model_classification(
-            x_train,
-            x_test,
-            y_train,
-            y_test,
-            metadata,
-            best_model_name,
-            models_params[best_model_name],
-        )
-    elif issubclass(all_models.get(best_model_name), RegressorMixin):
-        train_model_regression(
-            x_train,
-            x_test,
-            y_train,
-            y_test,
-            metadata,
-            best_model_name,
-            models_params[best_model_name],
-        )
-
-    return model_scores
-
-
 def get_feature_importance(model, columns, x_train_scaled):
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
@@ -199,18 +125,25 @@ def get_feature_importance(model, columns, x_train_scaled):
 
 
 def train_model_classification(
-    x_train, x_test, y_train, y_test, metadata, model_type: str, model_params: dict
-):
+    *,
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
+    metadata: MetaData,
+    model_name: str,
+    model_params: dict,
+) -> None:
     """
     Function to train a generic sklearn ML model
 
-    :param model_type: Name of the model to train (e.g. 'RandomForestClassifier').
+    :param model_name: Name of the model to train (e.g. 'RandomForestClassifier').
     :param model_params: Parameters to pass to the model as a dictionary.
     :param experiment_name: Name of the MLFlow experiment
     """
 
     # Load the model dinamically
-    ModelClass = dict(all_estimators())[model_type]
+    ModelClass = dict(all_estimators())[model_name]
 
     # Create the model with the requested parameters
     try:
@@ -257,21 +190,22 @@ def train_model_classification(
         print(confusion_matrix(y_test, y_pred_test))
         print(classification_report(y_test, y_pred_test))
         log_on_mlflow(
-            model_params, model_type, model, metrics, metadata, feature_importance_df
+            model_params, model_name, model, metrics, metadata, feature_importance_df
         )
 
 
 def train_model_regression(
-    x_train,
-    x_test,
-    y_train,
-    y_test,
+    *,
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
     metadata: MetaData,
-    model_type: str,
+    model_name: str,
     model_params: dict,
-):
+) -> None:
     # Load the model dinamically
-    ModelClass = dict(all_estimators())[model_type]
+    ModelClass = dict(all_estimators())[model_name]
 
     # Create the model with the requested parameters
     try:
@@ -313,13 +247,88 @@ def train_model_regression(
         }
 
         log_on_mlflow(
-            model_params, model_type, model, metrics, metadata, feature_importance_df
+            model_params, model_name, model, metrics, metadata, feature_importance_df
         )
+
+
+def kfold_cross_validation(
+    *,
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
+    metadata: MetaData,
+    models_params: dict[str, dict],
+    n_splits: int = 5,
+    scoring: str = "roc_auc",
+) -> None:
+    x = x_train
+    y = y_train
+
+    # Initialize KFold
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    # Dictionary to store scores
+    model_scores = {}
+    mean_scores = {}
+    # Get all estimators
+    all_models = dict(all_estimators())
+
+    # Initialize RobustScaler
+    scaler = RobustScaler()
+
+    for model_name, params in models_params.items():
+        # Fetch the model class
+        ModelClass = all_models.get(model_name)
+        if ModelClass is None:
+            raise ValueError(f"Model {model_name} not found in sklearn estimators.")
+
+        # Instantiate the model with parameters
+        model = ModelClass(**params)
+
+        # Scale the features
+        x_scaled = scaler.fit_transform(x)
+
+        # Perform cross-validation
+        scores = cross_val_score(
+            model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
+        )
+
+        # Store the scores in the dictionary
+        model_scores[model_name] = scores
+        mean_scores[model_name] = np.mean(scores)
+        print(
+            f"Model: {model_name}, Mean {scoring}: {np.mean(scores):.4f}, Std: {np.std(scores):.4f}"
+        )
+    best_model_name = max(mean_scores, key=mean_scores.get)
+    print(f"Model selected for training: {best_model_name}")
+    if issubclass(all_models.get(best_model_name), ClassifierMixin):
+        train_model_classification(
+            x_train=x_train,
+            x_test=x_test,
+            y_train=y_train,
+            y_test=y_test,
+            metadata=metadata,
+            model_name=best_model_name,
+            model_params=models_params[best_model_name],
+        )
+    elif issubclass(all_models.get(best_model_name), RegressorMixin):
+        train_model_regression(
+            x_train=x_train,
+            x_test=x_test,
+            y_train=y_train,
+            y_test=y_test,
+            metadata=metadata,
+            model_name=best_model_name,
+            model_params=models_params[best_model_name],
+        )
+
+    return model_scores
 
 
 def log_on_mlflow(
     model_params: dict,
-    model_type: str,
+    model_name: str,
     model: any,
     metrics: dict,
     metadata: MetaData,
@@ -341,8 +350,8 @@ def log_on_mlflow(
         # Log the sklearn model and register
         mlflow.sklearn.log_model(
             sk_model=model,
-            artifact_path=model_type,
-            registered_model_name=model_type,
+            artifact_path=model_name,
+            registered_model_name=model_name,
             metadata=metadata.model_dump(),
         )
         for key, value in metadata.model_dump().items():
@@ -351,7 +360,7 @@ def log_on_mlflow(
         with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
             feature_importance_df.to_csv(temp_file.name, index=False)
             mlflow.log_artifact(temp_file.name, artifact_path="feature_importances")
-    print(f"Model {model_type} successfully logged on MLflow.")
+    print(f"Model {model_name} successfully logged on MLflow.")
 
 
 def run(logger: Logger) -> None:
@@ -384,59 +393,53 @@ def run(logger: Logger) -> None:
     else:
         x_train_cleaned, y_train_cleaned = x_train, y_train
 
+    # Train the classification model chosen by the user
+    # or perform k-fold cross validation
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
         model = settings.CLASSIFICATION_MODELS.keys()[0]
-        # Train the model chosen by the user
         train_model_classification(
-            x_train_cleaned,
-            x_test,
-            y_train_cleaned,
-            y_test,
-            metadata,
-            model,
-            settings.CLASSIFICATION_MODELS.get(model),
+            x_train=x_train_cleaned,
+            x_test=x_test,
+            y_train=y_train_cleaned,
+            y_test=y_test,
+            metadata=metadata,
+            model_name=model,
+            model_params=settings.CLASSIFICATION_MODELS.get(model),
         )
     else:
         # Perform KFold cross validation
         kfold_cross_validation(
-            x_train_cleaned,
-            x_test,
-            y_train_cleaned,
-            y_test,
-            metadata,
-            settings.CLASSIFICATION_MODELS,
-            settings.KFOLDS,
+            x_train=x_train_cleaned,
+            x_test=x_test,
+            y_train=y_train_cleaned,
+            y_test=y_test,
+            metadata=metadata,
+            models_params=settings.CLASSIFICATION_MODELS,
+            n_splits=settings.KFOLDS,
             scoring="roc_auc",
         )
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :-2], df.iloc[:, -1:], test_size=0.2, random_state=42
-    )
-    if settings.REMOVE_OUTLIERS:
-        x_train_cleaned, y_train_cleaned = remove_outliers(x_train, y_train)
-    else:
-        x_train_cleaned, y_train_cleaned = x_train, y_train
+    # Train the regression model chosen by the user
+    # or perform k-fold cross validation
     if len(settings.REGRESSION_MODELS.keys()) == 1:
         model = settings.REGRESSION_MODELS.keys()[0]
-        # Train the model chosen by the user
         train_model_regression(
-            x_train_cleaned,
-            x_test,
-            y_train_cleaned,
-            y_test,
-            metadata,
-            model,
-            settings.REGRESSION_MODELS.get(model),
+            x_train=x_train_cleaned,
+            x_test=x_test,
+            y_train=y_train_cleaned,
+            y_test=y_test,
+            metadata=metadata,
+            model_name=model,
+            model_params=settings.REGRESSION_MODELS.get(model),
         )
     else:
-        # Perform KFold cross validation
         kfold_cross_validation(
-            x_train_cleaned,
-            x_test,
-            y_train_cleaned,
-            y_test,
-            metadata,
-            settings.REGRESSION_MODELS,
-            settings.KFOLDS,
+            x_train=x_train_cleaned,
+            x_test=x_test,
+            y_train=y_train_cleaned,
+            y_test=y_test,
+            metadata=metadata,
+            models_params=settings.REGRESSION_MODELS,
+            n_splits=settings.KFOLDS,
             scoring="r2",
         )
