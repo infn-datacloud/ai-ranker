@@ -90,13 +90,15 @@ def remove_outliers(
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def get_feature_importance(model, columns, x_train_scaled):
+def get_feature_importance(model, columns, x_train_scaled, logger):
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
         feature_importances = model.feature_importances_
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Importance": feature_importances}
         ).sort_values(by="Importance", ascending=False)
+        logger.debug("Important features:")
+        logger.debug(feature_importance_df)
         return feature_importance_df
 
     # Case 2: Models like Lasso (coefficient)
@@ -105,6 +107,8 @@ def get_feature_importance(model, columns, x_train_scaled):
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Coefficient": coef}
         ).sort_values(by="Coefficient", ascending=False)
+        logger.debug("Important features:")
+        logger.debug(feature_importance_df)
         return feature_importance_df
 
     # Case 3: Models without `feature_importances_` or `coef_`, use SHAP
@@ -118,6 +122,8 @@ def get_feature_importance(model, columns, x_train_scaled):
             feature_importance_df = pd.DataFrame(
                 {"Feature": columns, "Importance": shap_importance}
             ).sort_values(by="Importance", ascending=False)
+            logger.debug("Important features:")
+            logger.debug(feature_importance_df)
             return feature_importance_df
         except Exception as e:
             print(f"Errore nell'uso di SHAP: {e}")
