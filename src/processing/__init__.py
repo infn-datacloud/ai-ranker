@@ -158,8 +158,8 @@ def preprocessing(
     df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
     df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP])
 
+    # Calculate historical features.
     grouped = df.groupby([DF_PROVIDER, MSG_TEMPLATE_NAME])
-    df = df.copy()  # <-- perchè qua devi fare la copia?
     df[DF_FAIL_PERC] = df.apply(
         lambda row: calculate_failure_percentage(
             grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
@@ -179,6 +179,8 @@ def preprocessing(
         axis=1,
     )
 
+    # Exclude NaN values and return only final features
+    df = df[~df.isna().any(axis=1)]
     df = df[final_features]
 
     logger.info("Pre-process completed")
@@ -188,7 +190,7 @@ def preprocessing(
     return df
 
 
-def calculate_failure_percentage(group, row):
+def calculate_failure_percentage(group: pd.DataFrame, row: pd.Series) -> float | None:
     mask = (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP]) & (
         group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90)
     )
@@ -196,7 +198,7 @@ def calculate_failure_percentage(group, row):
     return filtered_group[DF_STATUS].mean() if not filtered_group.empty else None
 
 
-def calculate_avg_success_time(group, row):
+def calculate_avg_success_time(group: pd.DataFrame, row: pd.Series) -> float:
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
         & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90))
@@ -206,7 +208,7 @@ def calculate_avg_success_time(group, row):
     return filtered_group[DF_DEP_TIME].mean() if not filtered_group.empty else 0.0
 
 
-def calculate_avg_failure_time(group, row):
+def calculate_avg_failure_time(group: pd.DataFrame, row: pd.Series) -> float:
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
         & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90))
