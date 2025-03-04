@@ -28,6 +28,9 @@ from processing import DF_TIMESTAMP, load_dataset, preprocessing
 from settings import load_training_settings, setup_mlflow
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
 
+STATUS_COL = -2
+DEP_TIME_COL = -1
+
 single_vm = [
     "single-vm/single_vm.yaml",
     "single-vm/single_vm_with_volume.yaml",
@@ -159,8 +162,10 @@ def calculate_classification_metrics(
     )
     logger.debug("Test dataset metrics: %s", test_metrics)
 
-    logger.debug(confusion_matrix(y_test, y_test_pred))  # TODO: needed?
-    logger.debug(classification_report(y_test, y_test_pred))  # TODO: needed?
+    logger.debug("Confusion matrix:")
+    logger.debug(confusion_matrix(y_test, y_test_pred))
+    logger.debug("Classification report:")
+    logger.debug(classification_report(y_test, y_test_pred))
 
     d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
     d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
@@ -388,13 +393,19 @@ def run(logger: Logger) -> None:
     )
 
     x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :-2],
-        df.iloc[:, -2:-1],
+        df.iloc[:, :STATUS_COL],
+        df.iloc[:, STATUS_COL:DEP_TIME_COL],
         test_size=settings.TEST_SIZE,
         random_state=42,
     )
     if settings.REMOVE_OUTLIERS:
-        x_train_cleaned, y_train_cleaned = remove_outliers(x_train, y_train)
+        x_train_cleaned, y_train_cleaned = remove_outliers(
+            x_train,
+            y_train,
+            q1=settings.Q1_FACTOR,
+            q3=settings.Q3_FACTOR,
+            k=settings.THRESHOLD_FACTOR,
+        )
     else:
         x_train_cleaned, y_train_cleaned = x_train, y_train
 
@@ -425,6 +436,23 @@ def run(logger: Logger) -> None:
             scoring="roc_auc",
             logger=logger,
         )
+
+    x_train, x_test, y_train, y_test = train_test_split(
+        df.iloc[:, :STATUS_COL],
+        df.iloc[:, DEP_TIME_COL:],
+        test_size=settings.TEST_SIZE,
+        random_state=42,
+    )
+    if settings.REMOVE_OUTLIERS:
+        x_train_cleaned, y_train_cleaned = remove_outliers(
+            x_train,
+            y_train,
+            q1=settings.Q1_FACTOR,
+            q3=settings.Q3_FACTOR,
+            k=settings.THRESHOLD_FACTOR,
+        )
+    else:
+        x_train_cleaned, y_train_cleaned = x_train, y_train
 
     # Train the regression model chosen by the user
     # or perform k-fold cross validation
