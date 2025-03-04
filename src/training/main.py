@@ -130,7 +130,74 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
             return None
 
 
-def train_model_classification(
+def calculate_classification_metrics(
+    model: ClassifierMixin,
+    *,
+    x_train_scaled: pd.DataFrame,
+    x_test_scaled: pd.DataFrame,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
+    y_train_pred: pd.DataFrame,
+    y_test_pred: pd.DataFrame,
+    logger: Logger,
+) -> dict[str, float]:
+    """Compute Metrics on a Classification Model."""
+    train_metrics = ClassificationMetrics(
+        accuracy=accuracy_score(y_train, y_train_pred),
+        auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
+        f1=f1_score(y_train, y_train_pred, average="binary"),
+        precision=precision_score(y_train, y_train_pred, average="binary"),
+        recall=recall_score(y_train, y_train_pred, average="binary"),
+    )
+    logger.debug("Train dataset metrics: %s", train_metrics)
+    test_metrics = ClassificationMetrics(
+        accuracy=accuracy_score(y_test, y_test_pred),
+        auc=roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
+        f1=f1_score(y_test, y_test_pred, average="binary"),
+        precision=precision_score(y_test, y_test_pred, average="binary"),
+        recall=recall_score(y_test, y_test_pred, average="binary"),
+    )
+    logger.debug("Test dataset metrics: %s", test_metrics)
+
+    logger.debug(confusion_matrix(y_test, y_test_pred))  # TODO: needed?
+    logger.debug(classification_report(y_test, y_test_pred))  # TODO: needed?
+
+    d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
+    d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
+    return {**d1, **d2}
+
+
+def calculate_regression_metrics(
+    *,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
+    y_train_pred: pd.DataFrame,
+    y_test_pred: pd.DataFrame,
+    logger: Logger,
+) -> dict[str, float]:
+    """Compute Metrics on a Regression Model."""
+
+    train_metrics = RegressionMetrics(
+        mse=mean_squared_error(y_train, y_train_pred),
+        rmse=np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        mae=mean_absolute_error(y_train, y_train_pred),
+        r2=r2_score(y_train, y_train_pred),
+    )
+    logger.debug("Train dataset metrics: %s", train_metrics)
+    test_metrics = RegressionMetrics(
+        mse=mean_squared_error(y_test, y_test_pred),
+        rmse=np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        mae=mean_absolute_error(y_test, y_test_pred),
+        r2=r2_score(y_test, y_test_pred),
+    )
+    logger.debug("Test dataset metrics: %s", test_metrics)
+
+    d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
+    d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
+    return {**d1, **d2}
+
+
+def train_model(
     *,
     x_train: pd.DataFrame,
     x_test: pd.DataFrame,
@@ -154,7 +221,7 @@ def train_model_classification(
         cls = dict(all_estimators()).get(model_name, None)
         model = cls(**model_params)
     except TypeError as e:
-        logger.error("Error in the creation of the model: %s", e)
+        logger.error("Error in '%s' model creation: %s", model_name, e)
         exit(1)
 
     scaler = RobustScaler()
@@ -170,90 +237,28 @@ def train_model_classification(
         model, x_train.columns, x_train_scaled, logger
     )
 
-    # Do predictions
-    y_pred_train = model.predict(x_train_scaled)
-    y_pred_test = model.predict(x_test_scaled)
-
-    # Compute Metrics
-    train_metrics = ClassificationMetrics(
-        accuracy=accuracy_score(y_train, y_pred_train),
-        auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
-        f1_train=f1_score(y_train, y_pred_train, average="binary"),
-        precision=precision_score(y_train, y_pred_train, average="binary"),
-        recall=recall_score(y_train, y_pred_train, average="binary"),
-    )
-    test_metrics = ClassificationMetrics(
-        accuracy=accuracy_score(y_test, y_pred_test),
-        auc=roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
-        F1=f1_score(y_test, y_pred_test, average="binary"),
-        Precision=precision_score(y_test, y_pred_test, average="binary"),
-        Recall=recall_score(y_test, y_pred_test, average="binary"),
-    )
-    d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
-    d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
-    metrics = {**d1, **d2}
-
-    print(confusion_matrix(y_test, y_pred_test))
-    print(classification_report(y_test, y_pred_test))
-    log_on_mlflow(
-        model_params, model_name, model, metrics, metadata, feature_importance_df
-    )
-
-
-def train_model_regression(
-    *,
-    x_train: pd.DataFrame,
-    x_test: pd.DataFrame,
-    y_train: pd.DataFrame,
-    y_test: pd.DataFrame,
-    metadata: MetaData,
-    model_name: str,
-    model_params: dict,
-    logger: Logger,
-) -> None:
-    # Load the model dinamically
-    try:
-        cls = dict(all_estimators()).get(model_name, None)
-        model = cls(**model_params)
-    except TypeError as e:
-        logger.error("Error in the creation of the model: %s", e)
-        exit(1)
-
-    scaler = RobustScaler()
-    x_train_scaled = scaler.fit_transform(x_train)
-    x_test_scaled = scaler.transform(x_test)
-
-    # Train the model
-    model.fit(x_train_scaled, y_train.values.ravel())
-
-    # Get feature importance
-    feature_importance_df = get_feature_importance(
-        model, x_train.columns, x_train_scaled, logger
-    )
-
-    if feature_importance_df is not None:
-        print(feature_importance_df)
-
-    # Do predictions
     y_train_pred = model.predict(x_train_scaled)
     y_test_pred = model.predict(x_test_scaled)
 
-    # Compute metrics
-    train_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_train, y_train_pred),
-        rmse=np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        mae=mean_absolute_error(y_train, y_train_pred),
-        r2=r2_score(y_train, y_train_pred),
-    )
-    test_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_test, y_test_pred),
-        rmse=np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        mae=mean_absolute_error(y_test, y_test_pred),
-        r2=r2_score(y_test, y_test_pred),
-    )
-    d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
-    d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
-    metrics = {**d1, **d2}
+    if issubclass(cls, ClassifierMixin):
+        metrics = calculate_classification_metrics(
+            model=model,
+            x_train_scaled=x_train_scaled,
+            x_test_scaled=x_test_scaled,
+            y_train=y_train,
+            y_test=y_test,
+            y_train_pred=y_train_pred,
+            y_test_pred=y_test_pred,
+            logger=logger,
+        )
+    elif issubclass(cls, RegressorMixin):
+        metrics = calculate_regression_metrics(
+            y_train=y_train,
+            y_test=y_test,
+            y_train_pred=y_train_pred,
+            y_test_pred=y_test_pred,
+            logger=logger,
+        )
 
     log_on_mlflow(
         model_params, model_name, model, metrics, metadata, feature_importance_df
@@ -312,28 +317,16 @@ def kfold_cross_validation(
         )
     best_model_name = max(mean_scores, key=mean_scores.get)
     print(f"Model selected for training: {best_model_name}")
-    if issubclass(all_models.get(best_model_name), ClassifierMixin):
-        train_model_classification(
-            x_train=x_train,
-            x_test=x_test,
-            y_train=y_train,
-            y_test=y_test,
-            metadata=metadata,
-            model_name=best_model_name,
-            model_params=models_params[best_model_name],
-            logger=logger,
-        )
-    elif issubclass(all_models.get(best_model_name), RegressorMixin):
-        train_model_regression(
-            x_train=x_train,
-            x_test=x_test,
-            y_train=y_train,
-            y_test=y_test,
-            metadata=metadata,
-            model_name=best_model_name,
-            model_params=models_params[best_model_name],
-            logger=logger,
-        )
+    train_model(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        model_name=best_model_name,
+        model_params=models_params[best_model_name],
+        logger=logger,
+    )
 
     return model_scores
 
@@ -408,8 +401,8 @@ def run(logger: Logger) -> None:
     # Train the classification model chosen by the user
     # or perform k-fold cross validation
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
-        model = settings.CLASSIFICATION_MODELS.keys()[0]
-        train_model_classification(
+        model = next(iter(settings.CLASSIFICATION_MODELS))
+        train_model(
             x_train=x_train_cleaned,
             x_test=x_test,
             y_train=y_train_cleaned,
@@ -436,8 +429,8 @@ def run(logger: Logger) -> None:
     # Train the regression model chosen by the user
     # or perform k-fold cross validation
     if len(settings.REGRESSION_MODELS.keys()) == 1:
-        model = settings.REGRESSION_MODELS.keys()[0]
-        train_model_regression(
+        model = next(iter(settings.REGRESSION_MODELS))
+        train_model(
             x_train=x_train_cleaned,
             x_test=x_test,
             y_train=y_train_cleaned,
