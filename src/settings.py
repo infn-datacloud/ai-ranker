@@ -89,6 +89,11 @@ class TrainingSettings(CommonSettings):
         gt=0.0,
         description="Test size with respect to the whole dataset. Range (0, 1).",
     )
+    Q1_FACTOR: float = Field(default=0.25, description="First quantile")
+    Q3_FACTOR: float = Field(default=0.75, description="Third quantile")
+    THRESHOLD_FACTOR: float = Field(
+        default=1.5, description="Multiplication factor for outlier threshold"
+    )
     FINAL_FEATURES: list = Field(
         description="List of final features in the processed Dataset",
     )
