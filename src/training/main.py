@@ -133,6 +133,7 @@ def train_model_classification(
     metadata: MetaData,
     model_name: str,
     model_params: dict,
+    logger: Logger,
 ) -> None:
     """
     Function to train a generic sklearn ML model
@@ -142,21 +143,20 @@ def train_model_classification(
     :param experiment_name: Name of the MLFlow experiment
     """
 
-    # Load the model dinamically
-    ModelClass = dict(all_estimators())[model_name]
-
-    # Create the model with the requested parameters
+    # Dinamically load the model with the requested parameters
     try:
-        model = ModelClass(**model_params)
+        cls = dict(all_estimators()).get(model_name, None)
+        model = cls(**model_params)
     except TypeError as e:
-        print(f"Error in the creation of the model: {e}")
-        return
+        logger.error("Error in the creation of the model: %s", e)
+        exit(1)
 
     scaler = RobustScaler()
     x_train_scaled = scaler.fit_transform(x_train)
     x_test_scaled = scaler.transform(x_test)
 
     # Train the model
+    logger.info("Training model '%s' with params: %s", model_name, model_params)
     model.fit(x_train_scaled, y_train.values.ravel())
 
     # Get feature importance
@@ -203,6 +203,7 @@ def train_model_regression(
     metadata: MetaData,
     model_name: str,
     model_params: dict,
+    logger: Logger,
 ) -> None:
     # Load the model dinamically
     ModelClass = dict(all_estimators())[model_name]
@@ -223,7 +224,7 @@ def train_model_regression(
 
     # Get feature importance
     feature_importance_df = get_feature_importance(
-        model, x_train.columns, x_train_scaled
+        model, x_train.columns, x_train_scaled, logger
     )
 
     if feature_importance_df is not None:
@@ -259,6 +260,7 @@ def kfold_cross_validation(
     y_test: pd.DataFrame,
     metadata: MetaData,
     models_params: dict[str, dict],
+    logger: Logger,
     n_splits: int = 5,
     scoring: str = "roc_auc",
 ) -> None:
@@ -311,6 +313,7 @@ def kfold_cross_validation(
             metadata=metadata,
             model_name=best_model_name,
             model_params=models_params[best_model_name],
+            logger=logger
         )
     elif issubclass(all_models.get(best_model_name), RegressorMixin):
         train_model_regression(
@@ -321,6 +324,7 @@ def kfold_cross_validation(
             metadata=metadata,
             model_name=best_model_name,
             model_params=models_params[best_model_name],
+            logger=logger
         )
 
     return model_scores
@@ -405,6 +409,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.CLASSIFICATION_MODELS.get(model),
+            logger=logger,
         )
     else:
         # Perform KFold cross validation
@@ -417,6 +422,7 @@ def run(logger: Logger) -> None:
             models_params=settings.CLASSIFICATION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="roc_auc",
+            logger=logger,
         )
 
     # Train the regression model chosen by the user
@@ -431,6 +437,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.REGRESSION_MODELS.get(model),
+            logger=logger,
         )
     else:
         kfold_cross_validation(
@@ -442,4 +449,5 @@ def run(logger: Logger) -> None:
             models_params=settings.REGRESSION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="r2",
+            logger=logger,
         )
