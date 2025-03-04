@@ -110,6 +110,7 @@ class TrainingSettings(CommonSettings):
 
 class InferenceSettings(CommonSettings):
     """Definition of environment variables related to the Inference service"""
+
     CLASSIFICATION_MODEL_NAME: str = Field(
         default="RandomForestClassifier", description="Name of the classification model"
     )
