@@ -109,7 +109,7 @@ class TrainingSettings(CommonSettings):
                 assert k in estimators.keys(), (
                     f"Model '{k}' is not available in scikit-learn."
                 )
-                assert isinstance(estimators[k], ClassifierMixin), (
+                assert issubclass(estimators[k], ClassifierMixin), (
                     f"Model '{k}' in not a Classifier model"
                 )
                 assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
@@ -129,7 +129,7 @@ class TrainingSettings(CommonSettings):
                 assert k in estimators.keys(), (
                     f"Model '{k}' is not available in scikit-learn."
                 )
-                assert isinstance(estimators[k], RegressorMixin), (
+                assert issubclass(estimators[k], RegressorMixin), (
                     f"Model '{k}' is not a Regressor model"
                 )
                 assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
