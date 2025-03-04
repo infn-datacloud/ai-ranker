@@ -149,7 +149,7 @@ def preprocessing(
     ]
     df[DF_GPU] = df[MSG_GPU_REQ].astype(bool).astype(float)
     df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP).astype(int)
-    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(template_complex_types).astype(float)
+    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(float)
     df[DF_DEP_TIME] = np.where(
         df[MSG_DEP_COMPLETION_TIME] != 0.0,
         df[MSG_DEP_COMPLETION_TIME],
