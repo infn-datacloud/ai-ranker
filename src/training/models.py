@@ -13,7 +13,7 @@ class MetaData(BaseModel):
     remove_outliers: bool = Field(default=False, description="Flag to remove outliers")
 
 
-class Metrics(BaseModel):
+class ClassificationMetrics(BaseModel):
     """Metrics stored in the MLFlow model registry."""
 
     accuracy: float = Field(description="Accuracy score on dataset")
@@ -21,3 +21,12 @@ class Metrics(BaseModel):
     f1: float = Field(description="F1 score on dataset")
     precision: float = Field(description="Precision score on dataset")
     recall: float = Field(description="Recall score on dataset")
+
+
+class RegressionMetrics(BaseModel):
+    """Metrics stored in the MLFlow model registry."""
+
+    mse: float = Field(description="Mean Square Error")
+    rmse: float = Field(descrption="Root Mean Square Error")
+    mae: float = Field(description="Mean Absolute Error")
+    r2: float = Field(description="R2 score")
