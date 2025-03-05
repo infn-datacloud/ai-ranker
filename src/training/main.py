@@ -7,6 +7,7 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
+import pickle
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
@@ -211,6 +212,7 @@ def train_model(
     metadata: MetaData,
     model_name: str,
     model_params: dict,
+    scaler_file: str,
     logger: Logger,
 ) -> None:
     """
@@ -231,6 +233,7 @@ def train_model(
 
     scaler = RobustScaler()
     x_train_scaled = scaler.fit_transform(x_train)
+    scaler_bytes = pickle.dumps(scaler)
     x_test_scaled = scaler.transform(x_test)
 
     # Train the model
@@ -266,7 +269,7 @@ def train_model(
         )
 
     log_on_mlflow(
-        model_params, model_name, model, metrics, metadata, feature_importance_df
+        model_params, model_name, model, metrics, metadata, feature_importance_df, scaler_file, scaler_bytes
     )
 
 
@@ -281,6 +284,7 @@ def kfold_cross_validation(
     logger: Logger,
     n_splits: int = 5,
     scoring: str = "roc_auc",
+    scaler_file: str,
 ) -> None:
     x = x_train
     y = y_train
@@ -330,6 +334,7 @@ def kfold_cross_validation(
         metadata=metadata,
         model_name=best_model_name,
         model_params=models_params[best_model_name],
+        scaler_file=scaler_file,
         logger=logger,
     )
 
@@ -343,6 +348,8 @@ def log_on_mlflow(
     metrics: dict,
     metadata: MetaData,
     feature_importance_df: pd.DataFrame,
+    scaler_file: str,
+    scaler_bytes: bytes,
 ):
     # Logging on MLflow
     with mlflow.start_run():
@@ -357,15 +364,22 @@ def log_on_mlflow(
         for metric, value in metrics.items():
             mlflow.log_metric(metric, value)
 
-        # Log the sklearn model and register
+        #Log the sklearn model and register
         mlflow.sklearn.log_model(
             sk_model=model,
             artifact_path=model_name,
             registered_model_name=model_name,
             metadata=metadata.model_dump(),
         )
+
+        with open("/tmp/scaler.pkl", "wb") as f:  # Salva lo scaler temporaneamente
+            f.write(scaler_bytes)
+        mlflow.log_artifact(local_path="/tmp/scaler.pkl", artifact_path=model_name)
         for key, value in metadata.model_dump().items():
             mlflow.set_tag(key, value)
+
+        import os
+        os.remove("/tmp/scaler.pkl")
 
         with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
             feature_importance_df.to_csv(temp_file.name, index=False)
@@ -388,9 +402,9 @@ def run(logger: Logger) -> None:
     df = preprocessing(
         df=df,
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
-        final_features=settings.FINAL_FEATURES,
         logger=logger,
     )
+    df = df[settings.FINAL_FEATURES]
 
     x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :STATUS_COL],
@@ -421,6 +435,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.CLASSIFICATION_MODELS.get(model),
+            scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
     else:
@@ -434,6 +449,7 @@ def run(logger: Logger) -> None:
             models_params=settings.CLASSIFICATION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="roc_auc",
+            scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
 
@@ -466,6 +482,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.REGRESSION_MODELS.get(model),
+            scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
     else:
@@ -478,5 +495,6 @@ def run(logger: Logger) -> None:
             models_params=settings.REGRESSION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="r2",
+            scaler_file=settings.SCALER_FILE,
             logger=logger,
         )

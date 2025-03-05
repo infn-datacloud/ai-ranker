@@ -115,7 +115,6 @@ def preprocessing(
     *,
     df: pd.DataFrame,
     complex_templates: list[str],
-    final_features: list[str],
     logger: Logger,
 ) -> pd.DataFrame:
     """Pre-process data in the dataframe.
@@ -181,10 +180,10 @@ def preprocessing(
 
     # Exclude NaN values and return only final features
     df = df[~df.isna().any(axis=1)]
-    df = df[final_features]
+    #df = df[final_features]
 
     logger.info("Pre-process completed")
-    logger.debug("Return only columns: %s", final_features)
+    #logger.debug("Return only columns: %s", final_features)
     logger.debug("Final dataframe: %s", df)
 
     return df

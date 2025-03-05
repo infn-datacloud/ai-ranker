@@ -61,6 +61,10 @@ class CommonSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
+    SCALER_FILE: str = Field(
+        default="scaler.pkl", description="Default file where store the scaler"
+    )
+
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
