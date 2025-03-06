@@ -1,4 +1,5 @@
 import ast
+import base64
 import json
 import os
 import pickle
@@ -121,25 +122,33 @@ def classification_predict(
     feature_input: list,
     model_name: str,
     model_version: str,
+    scaling_enable: bool,
     scaler_file: str,
 ):
     model_uri = f"models:/{model_name}/{model_version}"
-    scaler_uri = f"{model_uri}/{scaler_file}"
     classification_values = {}
     try:
         # Get the model type and load it with the proper function
         model = mlflow.pyfunc.load_model(model_uri)
         model_type = model.metadata.flavors.keys()
-        scaler_artifact = mlflow.artifacts.download_artifacts(artifact_uri=scaler_uri)
-        with open(scaler_artifact, "rb") as f:
-            scaler = pickle.load(f)
         if "sklearn" in model_type:
             model = mlflow.sklearn.load_model(model_uri)
         else:
             raise ValueError("Model type not supported")
+
+        # Load model scaler if scaling is enabled
+        if scaling_enable:
+            scaler_uri = f"{model_uri}/{scaler_file}"
+            scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
+            scaler_bytes = base64.b64decode(scaler_dict["scaler"])
+            scaler = pickle.loads(scaler_bytes)
         for key, data in inputData.items():
             X_new = pd.DataFrame([data], columns=feature_input)
-            X_new_scaled = scaler.transform(X_new)
+            # scale x_new if scaling is enabled
+            if scaling_enable:
+                X_new_scaled = scaler.transform(X_new)
+            else:
+                X_new_scaled = X_new
             y_pred_new = model.predict_proba(X_new_scaled)
             classification_response = y_pred_new.tolist()
             success_prob = classification_response[0][0]
@@ -152,31 +161,40 @@ def classification_predict(
 
 def regression_predict(
     inputData: dict,
+    feature_input: list,
     model_name: str,
     model_version: str,
     max_regression_time,
     min_regression_time,
+    scaling_enable: str,
     scaler_file: str,
 ):
     model_uri = f"models:/{model_name}/{model_version}"
-    scaler_uri = f"{model_uri}/{scaler_file}"
     regression_values = {}
     try:
         # Get the model type and load it with the proper function
         model = mlflow.pyfunc.load_model(model_uri)
         model_type = model.metadata.flavors.keys()
-        scaler_artifact = mlflow.artifacts.download_artifacts(artifact_uri=scaler_uri)
-        with open(scaler_artifact, "rb") as f:
-            scaler = pickle.load(f)
 
         if "sklearn" in model_type:
             model = mlflow.sklearn.load_model(model_uri)
 
         else:
             raise ValueError("Model type not supported")
+
+        # Load model scaler if scaling is enabled
+        if scaling_enable:
+            scaler_uri = f"{model_uri}/{scaler_file}"
+            scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
+            scaler_bytes = base64.b64decode(scaler_dict["scaler"])
+            scaler = pickle.loads(scaler_bytes)
         for key, data in inputData.items():
-            X_new = pd.DataFrame([data])  # columns = feature_names)
-            X_new_scaled = scaler.transform(X_new)
+            X_new = pd.DataFrame([data], columns=feature_input)
+            # scale x_new if scaling is enabled
+            if scaling_enable:
+                X_new_scaled = scaler.transform(X_new)
+            else:
+                X_new_scaled = X_new
             y_pred_new = model.predict(X_new_scaled)
             regression_response = y_pred_new.tolist()
             regression_value_raw = regression_response[0]
@@ -201,6 +219,7 @@ def process_inference(
     min_regression_time: int,
     max_regression_time: int,
     exact_flavour: bool,
+    scaling_enable: bool,
     scaler_file: str,
     classification_weight: float = 0.75,
     threshold: float = 0.7,
@@ -217,14 +236,17 @@ def process_inference(
             feature_input=feature_input,
             model_name=classification_model_name,
             model_version=classification_model_version,
+            scaling_enable=scaling_enable,
             scaler_file=scaler_file,
         )
         regression_response = regression_predict(
             inputData=input_inference,
+            feature_input=feature_input,
             model_name=regression_model_name,
             model_version=regression_model_version,
             min_regression_time=min_regression_time,
             max_regression_time=max_regression_time,
+            scaling_enable=scaling_enable,
             scaler_file=scaler_file,
         )
 
@@ -265,8 +287,11 @@ def process_inference(
 
 
 def get_latest_version(client, model_name: str) -> str:
-    latestVersion = client.get_latest_versions(model_name)
-    return latestVersion[0].version
+    latest_version = max(
+        client.search_model_versions(f"name='{model_name}'"),
+        key=lambda x: int(x.version),
+    ).version
+    return latest_version
 
 
 def get_features_input(client, model_name: str) -> list:
@@ -301,6 +326,7 @@ def run(logger: Logger):
     classification_weight = settings.CLASSIFICATION_WEIGHT
     exact_flavour = settings.EXACT_FLAVOUR_PRECEDENCE
     scaler_file = settings.SCALER_FILE
+    scaling_enable = settings.SCALING_ENABLE
 
     # Create the MLflow client
     client = mlflow.tracking.MlflowClient()
@@ -357,6 +383,7 @@ def run(logger: Logger):
                         classification_weight=classification_weight,
                         threshold=threshold,
                         filter_on=filter_mode,
+                        scaling_enable=scaling_enable,
                         scaler_file=scaler_file,
                     )
                     end_time = time.time()

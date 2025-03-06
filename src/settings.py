@@ -65,6 +65,10 @@ class CommonSettings(BaseSettings):
         default="scaler.pkl", description="Default file where store the scaler"
     )
 
+    SCALING_ENABLE: bool = Field(
+        default=False, description="Perform the scaling of X features"
+    )
+
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"

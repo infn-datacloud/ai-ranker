@@ -1,3 +1,5 @@
+import base64
+import pickle
 from logging import Logger
 from tempfile import NamedTemporaryFile
 
@@ -7,7 +9,6 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
-import pickle
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
@@ -212,6 +213,7 @@ def train_model(
     metadata: MetaData,
     model_name: str,
     model_params: dict,
+    scaling_enable: bool,
     scaler_file: str,
     logger: Logger,
 ) -> None:
@@ -231,10 +233,16 @@ def train_model(
         logger.error("Error in '%s' model creation: %s", model_name, e)
         exit(1)
 
-    scaler = RobustScaler()
-    x_train_scaled = scaler.fit_transform(x_train)
-    scaler_bytes = pickle.dumps(scaler)
-    x_test_scaled = scaler.transform(x_test)
+    # Scale x_train if scaling is enabled
+    if scaling_enable:
+        scaler = RobustScaler()
+        x_train_scaled = scaler.fit_transform(x_train)
+        scaler_bytes = pickle.dumps(scaler)
+        x_test_scaled = scaler.transform(x_test)
+    else:
+        x_train_scaled = x_train
+        x_test_scaled = x_test
+        scaler_bytes = None
 
     # Train the model
     logger.info("Training model '%s' with params: %s", model_name, model_params)
@@ -269,7 +277,15 @@ def train_model(
         )
 
     log_on_mlflow(
-        model_params, model_name, model, metrics, metadata, feature_importance_df, scaler_file, scaler_bytes
+        model_params,
+        model_name,
+        model,
+        metrics,
+        metadata,
+        feature_importance_df,
+        scaling_enable,
+        scaler_file,
+        scaler_bytes,
     )
 
 
@@ -284,6 +300,7 @@ def kfold_cross_validation(
     logger: Logger,
     n_splits: int = 5,
     scoring: str = "roc_auc",
+    scaling_enable: bool,
     scaler_file: str,
 ) -> None:
     x = x_train
@@ -298,9 +315,6 @@ def kfold_cross_validation(
     # Get all estimators
     all_models = dict(all_estimators())
 
-    # Initialize RobustScaler
-    scaler = RobustScaler()
-
     for model_name, params in models_params.items():
         # Fetch the model class
         ModelClass = all_models.get(model_name)
@@ -310,8 +324,12 @@ def kfold_cross_validation(
         # Instantiate the model with parameters
         model = ModelClass(**params)
 
-        # Scale the features
-        x_scaled = scaler.fit_transform(x)
+        # Scale x if scaling is enabled
+        if scaling_enable:
+            scaler = RobustScaler()
+            x_scaled = scaler.fit_transform(x)
+        else:
+            x_scaled = x
 
         # Perform cross-validation
         scores = cross_val_score(
@@ -334,6 +352,7 @@ def kfold_cross_validation(
         metadata=metadata,
         model_name=best_model_name,
         model_params=models_params[best_model_name],
+        scaling_enable=scaling_enable,
         scaler_file=scaler_file,
         logger=logger,
     )
@@ -348,6 +367,7 @@ def log_on_mlflow(
     metrics: dict,
     metadata: MetaData,
     feature_importance_df: pd.DataFrame,
+    scaling_enable,
     scaler_file: str,
     scaler_bytes: bytes,
 ):
@@ -372,14 +392,14 @@ def log_on_mlflow(
             metadata=metadata.model_dump(),
         )
 
-        with open("/tmp/scaler.pkl", "wb") as f:  # Salva lo scaler temporaneamente
-            f.write(scaler_bytes)
-        mlflow.log_artifact(local_path="/tmp/scaler.pkl", artifact_path=model_name)
+        # Add scaler file as model artifact if scaling is enabled
+        if scaling_enable:
+            scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
+            mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
+
         for key, value in metadata.model_dump().items():
             mlflow.set_tag(key, value)
 
-        import os
-        os.remove("/tmp/scaler.pkl")
 
         with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
             feature_importance_df.to_csv(temp_file.name, index=False)
@@ -435,6 +455,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.CLASSIFICATION_MODELS.get(model),
+            scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
@@ -449,6 +470,7 @@ def run(logger: Logger) -> None:
             models_params=settings.CLASSIFICATION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="roc_auc",
+            scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
@@ -482,6 +504,7 @@ def run(logger: Logger) -> None:
             metadata=metadata,
             model_name=model,
             model_params=settings.REGRESSION_MODELS.get(model),
+            scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
@@ -495,6 +518,7 @@ def run(logger: Logger) -> None:
             models_params=settings.REGRESSION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="r2",
+            scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
