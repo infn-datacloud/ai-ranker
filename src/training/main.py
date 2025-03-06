@@ -277,6 +277,8 @@ def train_model(
             logger=logger,
         )
 
+    logger.info("Model successfully trained and metrics computed")
+    logger.info("Logging the model on MLFlow")
     try:
         log_on_mlflow(
             model_params,
@@ -355,7 +357,7 @@ def kfold_cross_validation(
             np.std(scores),
         )
     best_model_name = max(mean_scores, key=mean_scores.get)
-    logger.info("K-Fold Cross Validation ended")
+    logger.info("K-Fold Cross Validation completed")
     train_model(
         x_train=x_train,
         x_test=x_test,
@@ -453,6 +455,7 @@ def run(logger: Logger) -> None:
 
     # Train the classification model chosen by the user
     # or perform k-fold cross validation
+    logger.info("Classification phase started")
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
         model = next(iter(settings.CLASSIFICATION_MODELS))
         train_model(
@@ -483,6 +486,7 @@ def run(logger: Logger) -> None:
             logger=logger,
         )
 
+    logger.info("Classification phase ended")
     x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :STATUS_COL],
         df.iloc[:, DEP_TIME_COL:],
@@ -500,6 +504,7 @@ def run(logger: Logger) -> None:
     else:
         x_train_cleaned, y_train_cleaned = x_train, y_train
 
+    logger.info("Regression phase started")
     # Train the regression model chosen by the user
     # or perform k-fold cross validation
     if len(settings.REGRESSION_MODELS.keys()) == 1:
@@ -530,3 +535,4 @@ def run(logger: Logger) -> None:
             scaler_file=settings.SCALER_FILE,
             logger=logger,
         )
+    logger.info("Regression phase ended")
