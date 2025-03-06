@@ -2,6 +2,7 @@ import base64
 import pickle
 from logging import Logger
 from tempfile import NamedTemporaryFile
+import io
 
 import mlflow
 import mlflow.environment_variables
@@ -102,7 +103,7 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Importance": feature_importances}
         ).sort_values(by="Importance", ascending=False)
-        logger.debug("Important features:")
+        logger.debug("Feature Importance:")
         logger.debug(feature_importance_df)
         return feature_importance_df
 
@@ -112,7 +113,7 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Coefficient": coef}
         ).sort_values(by="Coefficient", ascending=False)
-        logger.debug("Important features:")
+        logger.debug("Feature importance:")
         logger.debug(feature_importance_df)
         return feature_importance_df
 
@@ -127,7 +128,7 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
             feature_importance_df = pd.DataFrame(
                 {"Feature": columns, "Importance": shap_importance}
             ).sort_values(by="Importance", ascending=False)
-            logger.debug("Important features:")
+            logger.debug("Feature importance:")
             logger.debug(feature_importance_df)
             return feature_importance_df
         except Exception as e:
@@ -154,7 +155,7 @@ def calculate_classification_metrics(
         precision=precision_score(y_train, y_train_pred, average="binary"),
         recall=recall_score(y_train, y_train_pred, average="binary"),
     )
-    logger.debug("Train dataset metrics: %s", train_metrics)
+    logger.debug("Model metrics on the training dataset: %s", train_metrics)
     test_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_test, y_test_pred),
         auc=roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
@@ -162,7 +163,7 @@ def calculate_classification_metrics(
         precision=precision_score(y_test, y_test_pred, average="binary"),
         recall=recall_score(y_test, y_test_pred, average="binary"),
     )
-    logger.debug("Test dataset metrics: %s", test_metrics)
+    logger.debug("Model metrics on the test dataset: %s", test_metrics)
 
     logger.debug("Confusion matrix:")
     logger.debug(confusion_matrix(y_test, y_test_pred))
@@ -276,17 +277,22 @@ def train_model(
             logger=logger,
         )
 
-    log_on_mlflow(
-        model_params,
-        model_name,
-        model,
-        metrics,
-        metadata,
-        feature_importance_df,
-        scaling_enable,
-        scaler_file,
-        scaler_bytes,
-    )
+    try:
+        log_on_mlflow(
+            model_params,
+            model_name,
+            model,
+            metrics,
+            metadata,
+            feature_importance_df,
+            scaling_enable,
+            scaler_file,
+            scaler_bytes,
+            x_train,
+        )
+        logger.info("Model %s successfully logged on MLflow", model_name)
+    except Exception as e:
+        logger.error("Error in logging the model in MLFlow server: %s", e)
 
 
 def kfold_cross_validation(
@@ -303,6 +309,8 @@ def kfold_cross_validation(
     scaling_enable: bool,
     scaler_file: str,
 ) -> None:
+
+    logger.info("Perform K-Fold Cross Validation")
     x = x_train
     y = y_train
 
@@ -339,11 +347,15 @@ def kfold_cross_validation(
         # Store the scores in the dictionary
         model_scores[model_name] = scores
         mean_scores[model_name] = np.mean(scores)
-        print(
-            f"Model: {model_name}, Mean {scoring}: {np.mean(scores):.4f}, Std: {np.std(scores):.4f}"
+        logger.debug(
+            "Model: %s, Mean %s: %.4f, Std: %.4f",
+            model_name,
+            scoring,
+            np.mean(scores),
+            np.std(scores),
         )
     best_model_name = max(mean_scores, key=mean_scores.get)
-    print(f"Model selected for training: {best_model_name}")
+    logger.info("K-Fold Cross Validation ended")
     train_model(
         x_train=x_train,
         x_test=x_test,
@@ -370,15 +382,12 @@ def log_on_mlflow(
     scaling_enable,
     scaler_file: str,
     scaler_bytes: bytes,
+    x_train: pd.DataFrame,
 ):
     # Logging on MLflow
     with mlflow.start_run():
         # Log the parameters
         mlflow.log_params(model_params)
-
-        # Print the metrics
-        for metric, value in metrics.items():
-            print(f"{metric}: {value}")
 
         # Log the metrics
         for metric, value in metrics.items():
@@ -390,6 +399,7 @@ def log_on_mlflow(
             artifact_path=model_name,
             registered_model_name=model_name,
             metadata=metadata.model_dump(),
+            input_example=x_train,
         )
 
         # Add scaler file as model artifact if scaling is enabled
@@ -400,11 +410,9 @@ def log_on_mlflow(
         for key, value in metadata.model_dump().items():
             mlflow.set_tag(key, value)
 
-
-        with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
+        with NamedTemporaryFile(delete=True, prefix="feature_importance", suffix=".csv") as temp_file:
             feature_importance_df.to_csv(temp_file.name, index=False)
-            mlflow.log_artifact(temp_file.name, artifact_path="feature_importances")
-    print(f"Model {model_name} successfully logged on MLflow.")
+            mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
 def run(logger: Logger) -> None:
@@ -424,7 +432,7 @@ def run(logger: Logger) -> None:
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
         logger=logger,
     )
-    df = df[settings.FINAL_FEATURES]
+    df = df[settings.FINAL_FEATURES].astype(np.float64)
 
     x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :STATUS_COL],

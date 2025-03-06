@@ -178,13 +178,11 @@ def preprocessing(
         axis=1,
     )
 
-    # Exclude NaN values and return only final features
+    # Exclude NaN values
     df = df[~df.isna().any(axis=1)]
-    #df = df[final_features]
 
-    logger.info("Pre-process completed")
-    #logger.debug("Return only columns: %s", final_features)
     logger.debug("Final dataframe: %s", df)
+    logger.info("Pre-process completed")
 
     return df
 

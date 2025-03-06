@@ -295,10 +295,10 @@ def get_latest_version(client, model_name: str) -> str:
 
 
 def get_features_input(client, model_name: str) -> list:
-    latestVersion = client.get_latest_versions(model_name)
-    run_id = latestVersion[0].run_id
-    run = mlflow.get_run(run_id)
-    feature_names = run.data.tags.get("features", None)
+    latest_version = get_latest_version(client, model_name)
+    model_uri = f"models:/{model_name}/{latest_version}"
+    model = mlflow.sklearn.load_model(model_uri)
+    feature_names = list(model.feature_names_in_)
     return feature_names
 
 
@@ -337,9 +337,7 @@ def run(logger: Logger):
     if regression_model_version == "latest":
         regression_model_version = get_latest_version(client, regression_model_name)
 
-    feature_names = get_features_input(client, classification_model_name)
-    feature_input = ast.literal_eval(feature_names)
-    feature_input = feature_input[:-2]
+    feature_input = get_features_input(client, classification_model_name)
 
     #### KAFKA SETUP
 
