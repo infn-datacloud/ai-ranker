@@ -223,7 +223,6 @@ def train_model(
 
     :param model_name: Name of the model to train (e.g. 'RandomForestClassifier').
     :param model_params: Parameters to pass to the model as a dictionary.
-    :param experiment_name: Name of the MLFlow experiment
     """
 
     # Dinamically load the model with the requested parameters
@@ -290,7 +289,6 @@ def train_model(
             scaling_enable,
             scaler_file,
             scaler_bytes,
-            x_train,
         )
         logger.info("Model %s successfully logged on MLflow", model_name)
     except Exception as e:
@@ -320,7 +318,6 @@ def kfold_cross_validation(
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     # Dictionary to store scores
-    model_scores = {}
     mean_scores = {}
     # Get all estimators
     all_models = dict(all_estimators())
@@ -347,7 +344,6 @@ def kfold_cross_validation(
         )
 
         # Store the scores in the dictionary
-        model_scores[model_name] = scores
         mean_scores[model_name] = np.mean(scores)
         logger.debug(
             "Model: %s, Mean %s: %.4f, Std: %.4f",
@@ -371,8 +367,6 @@ def kfold_cross_validation(
         logger=logger,
     )
 
-    return model_scores
-
 
 def log_on_mlflow(
     model_params: dict,
@@ -384,7 +378,6 @@ def log_on_mlflow(
     scaling_enable,
     scaler_file: str,
     scaler_bytes: bytes,
-    x_train: pd.DataFrame,
 ):
     # Logging on MLflow
     with mlflow.start_run():
@@ -397,11 +390,11 @@ def log_on_mlflow(
 
         #Log the sklearn model and register
         mlflow.sklearn.log_model(
+            signature=False,
             sk_model=model,
             artifact_path=model_name,
             registered_model_name=model_name,
             metadata=metadata.model_dump(),
-            input_example=x_train,
         )
 
         # Add scaler file as model artifact if scaling is enabled
@@ -422,19 +415,19 @@ def run(logger: Logger) -> None:
     setup_mlflow(logger=logger)
 
     df = load_dataset(settings=settings, logger=logger)
-    metadata = MetaData(
-        start_time=df[DF_TIMESTAMP].max(),
-        end_time=df[DF_TIMESTAMP].min(),
-        features=settings.FINAL_FEATURES,
-        features_number=len(settings.FINAL_FEATURES),
-        remove_outliers=settings.REMOVE_OUTLIERS,
-    )
     df = preprocessing(
         df=df,
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
         logger=logger,
     )
-    df = df[settings.FINAL_FEATURES].astype(np.float64)
+    metadata = MetaData(
+        start_time=df[DF_TIMESTAMP].max().strftime('%Y-%m-%d %H:%M:%S'),
+        end_time=df[DF_TIMESTAMP].min().strftime('%Y-%m-%d %H:%M:%S'),
+        features=settings.FINAL_FEATURES,
+        features_number=len(settings.FINAL_FEATURES),
+        remove_outliers=settings.REMOVE_OUTLIERS,
+    )
+    df = df[settings.FINAL_FEATURES]
 
     x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :STATUS_COL],

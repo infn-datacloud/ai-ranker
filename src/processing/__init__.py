@@ -136,6 +136,7 @@ def preprocessing(
     logger.info("Pre-process data")
     logger.debug("Initial Dataframe:\n%s", df)
 
+    df.dropna(inplace=True)
     df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
     df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
     df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
@@ -146,13 +147,18 @@ def preprocessing(
     df[DF_PUB_IPS_DIFF] = (df[MSG_PUB_IPS_QUOTA] - df[MSG_PUB_IPS_USAGE]) - df[
         MSG_PUB_IPS_REQ
     ]
-    df[DF_GPU] = df[MSG_GPU_REQ].astype(bool).astype(float)
-    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP).astype(int)
-    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(float)
+    df[DF_GPU] = df[MSG_GPU_REQ]
+    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
+    df.dropna(subset=[DF_STATUS], inplace=True)
+    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates)
     df[DF_DEP_TIME] = np.where(
         df[MSG_DEP_COMPLETION_TIME] != 0.0,
         df[MSG_DEP_COMPLETION_TIME],
-        df[MSG_DEP_FAILED_TIME] / df[MSG_DEP_TOT_FAILURES],
+        np.where(
+            df[MSG_DEP_TOT_FAILURES] != 0,
+            df[MSG_DEP_FAILED_TIME] / df[MSG_DEP_TOT_FAILURES],
+            np.nan,
+        ),
     )
     df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
     df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP])
@@ -178,12 +184,8 @@ def preprocessing(
         axis=1,
     )
 
-    # Exclude NaN values
-    df = df[~df.isna().any(axis=1)]
-
     logger.debug("Final dataframe: %s", df)
     logger.info("Pre-process completed")
-
     return df
 
 
