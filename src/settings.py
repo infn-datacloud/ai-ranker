@@ -156,23 +156,22 @@ class InferenceSettings(CommonSettings):
     )
 
 
-# Function to load the settings
 def load_training_settings(logger: Logger) -> TrainingSettings:
+    """Function to load the training settings"""
     return TrainingSettings(logger)
 
 
-# Function to load the settings
 def load_inference_settings() -> InferenceSettings:
+    """Function to load the inference settings"""
     return InferenceSettings()
 
 
-# Function to load the settings
 def load_mlflow_settings() -> MLFlowSettings:
+    """Function to load the mlflow settings"""
     return MLFlowSettings()
 
-
 def setup_mlflow(*, logger: Logger) -> None:
-    """Set the mlflow server uri and experiment."""
+    """Function to set up the mlflow settings"""
     logger.info("Setting up MLFlow service communication")
     settings = load_mlflow_settings()
     try:
@@ -231,6 +230,6 @@ def validate_models(
         except (TypeError, ValueError) as e:
             logger.error(
                 e.message
-            )  #'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
+            )  # FIX: 'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
             exit(1)
     return models_dict
