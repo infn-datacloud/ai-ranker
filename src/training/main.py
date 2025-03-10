@@ -457,7 +457,11 @@ def training_phase(
 
 
 def run(logger: Logger) -> None:
-    settings = load_training_settings(logger)
+    try:
+        settings = load_training_settings()
+    except (ValueError, TypeError) as e:
+        logger.error(e)
+        exit(1)
     setup_mlflow(logger=logger)
 
     df = load_dataset(settings=settings, logger=logger)

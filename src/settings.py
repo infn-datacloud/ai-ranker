@@ -110,18 +110,18 @@ class TrainingSettings(CommonSettings):
     @field_validator("CLASSIFICATION_MODELS", mode="before")
     @classmethod
     def parse_classification_models_params(
-        cls, value: dict[str, dict], logger: Logger
+        cls, value: dict[str, dict]
     ) -> dict[str, ClassifierMixin]:
         """Verify the classification models"""
-        return validate_models(value, "classifier", ClassifierMixin, logger)
+        return validate_models(value, "classifier", ClassifierMixin)
 
     @field_validator("REGRESSION_MODELS", mode="before")
     @classmethod
     def parse_regression_models_params(
-        cls, value: dict[str, dict], logger: Logger
+        cls, value: dict[str, dict]
     ) -> dict[str, RegressorMixin]:
         """Verify the regression models"""
-        return validate_models(value, "regressor", RegressorMixin, logger)
+        return validate_models(value, "regressor", RegressorMixin)
 
 
 class InferenceSettings(CommonSettings):
@@ -156,9 +156,9 @@ class InferenceSettings(CommonSettings):
     )
 
 
-def load_training_settings(logger: Logger) -> TrainingSettings:
+def load_training_settings() -> TrainingSettings:
     """Function to load the training settings"""
-    return TrainingSettings(logger)
+    return TrainingSettings()
 
 
 def load_inference_settings() -> InferenceSettings:
@@ -169,6 +169,7 @@ def load_inference_settings() -> InferenceSettings:
 def load_mlflow_settings() -> MLFlowSettings:
     """Function to load the mlflow settings"""
     return MLFlowSettings()
+
 
 def setup_mlflow(*, logger: Logger) -> None:
     """Function to set up the mlflow settings"""
@@ -196,7 +197,7 @@ def setup_mlflow(*, logger: Logger) -> None:
 
 
 def validate_models(
-    value: dict[str, dict], model_type: str, model_class: type, logger: Logger
+    value: dict[str, dict], model_type: str, model_class: type
 ) -> dict[str, Any]:
     """Function to validate classifiers and regressors
 
@@ -212,24 +213,18 @@ def validate_models(
     estimators = dict(all_estimators(type_filter=model_type))
 
     for model_name, model_params in value.items():
-        try:
-            # Get the class of the model
-            model_class = estimators.get(model_name, None)
+        # Get the class of the model
+        model_class = estimators.get(model_name, None)
 
-            if model_class is None:
-                raise ValueError(f"Model {model_name} not found")
+        if model_class is None:
+            raise ValueError(f"Model {model_name} not found")
 
-            # Verify that the model belongs to the correct class
-            if not issubclass(model_class, model_class):
-                raise TypeError(f"The model {model_name} is not a {model_type} model")
+        # Verify that the model belongs to the correct class
+        if not issubclass(model_class, model_class):
+            raise TypeError(f"The model {model_name} is not a {model_type} model")
 
-            # Create the model object from the parameters
-            model = model_class(**model_params)
-            models_dict[model_name] = model
+        # Create the model object from the parameters
+        model = model_class(**model_params)
+        models_dict[model_name] = model
 
-        except (TypeError, ValueError) as e:
-            logger.error(
-                e.message
-            )  # FIX: 'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
-            exit(1)
     return models_dict
