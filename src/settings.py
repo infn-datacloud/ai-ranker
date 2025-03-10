@@ -79,11 +79,11 @@ class CommonSettings(BaseSettings):
 class TrainingSettings(CommonSettings):
     """Definition of environment variables related to the Training script."""
 
-    CLASSIFICATION_MODELS: dict[str, dict] = Field(
+    CLASSIFICATION_MODELS: dict[str, ClassifierMixin] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
-    REGRESSION_MODELS: dict[str, dict] = Field(
+    REGRESSION_MODELS: dict[str, RegressorMixin] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
@@ -107,19 +107,19 @@ class TrainingSettings(CommonSettings):
         description="List of final features in the processed Dataset",
     )
 
-    @field_validator("CLASSIFICATION_MODELS", mode="after")
+    @field_validator("CLASSIFICATION_MODELS", mode="before")
     @classmethod
     def parse_classification_models_params(
         cls, value: dict[str, dict], logger: Logger
-    ) -> dict[str, Any]:
+    ) -> dict[str, ClassifierMixin]:
         """Verify the classification models"""
         return validate_models(value, "classifier", ClassifierMixin, logger)
 
-    @field_validator("REGRESSION_MODELS", mode="after")
+    @field_validator("REGRESSION_MODELS", mode="before")
     @classmethod
     def parse_regression_models_params(
         cls, value: dict[str, dict], logger: Logger
-    ) -> dict[str, Any]:
+    ) -> dict[str, RegressorMixin]:
         """Verify the regression models"""
         return validate_models(value, "regressor", RegressorMixin, logger)
 
