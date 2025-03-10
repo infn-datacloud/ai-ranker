@@ -488,15 +488,15 @@ def run(logger: Logger) -> None:
     # Train the regression model chosen by the user
     # or perform k-fold cross validation
     if len(settings.REGRESSION_MODELS.keys()) == 1:
-        model = next(iter(settings.REGRESSION_MODELS.items()))
+        model_name, model = next(iter(settings.REGRESSION_MODELS.items()))
         train_model(
             x_train=x_train_cleaned,
             x_test=x_test,
             y_train=y_train_cleaned,
             y_test=y_test,
             metadata=metadata,
-            model_name=model,
-            model_params=settings.REGRESSION_MODELS.get(model),
+            model_name=model_name,
+            model=model,
             scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
@@ -508,7 +508,7 @@ def run(logger: Logger) -> None:
             y_train=y_train_cleaned,
             y_test=y_test,
             metadata=metadata,
-            models_params=settings.REGRESSION_MODELS,
+            models=settings.REGRESSION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="r2",
             scaling_enable=settings.SCALING_ENABLE,
