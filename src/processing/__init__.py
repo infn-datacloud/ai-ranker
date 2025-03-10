@@ -149,7 +149,7 @@ def preprocessing(
         MSG_PUB_IPS_REQ
     ]
     df[DF_GPU] = df[MSG_GPU_REQ]
-    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates)
+    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(int)
     df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
 
     # Remove rows where the map for df[DF_STATUS] fails
