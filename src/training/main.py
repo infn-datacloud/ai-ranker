@@ -397,6 +397,59 @@ def log_on_mlflow(
             mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
+def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
+    """ Divide the dataset in training and test sets and remove outliers if enabled"""
+    x_train, x_test, y_train, y_test = train_test_split(
+        df.iloc[:, :end_col_x],
+        df.iloc[:, start_col_y:end_col_y],
+        test_size=settings.TEST_SIZE,
+        random_state=42,
+    )
+
+    if settings.REMOVE_OUTLIERS:
+        x_train, y_train = remove_outliers(
+            x_train, y_train,
+            q1=settings.Q1_FACTOR,
+            q3=settings.Q3_FACTOR,
+            k=settings.THRESHOLD_FACTOR,
+        )
+
+    return x_train, x_test, y_train, y_test
+
+
+def training_phase(models, x_train, x_test, y_train, y_test, metadata, settings, logger, model_type):
+    """Train the regression model chosen by the user or perform k-fold cross validation
+    and then train the best model"""
+    if len(models) == 1:
+        model_name, model = next(iter(models.items()))
+        train_model(
+            x_train=x_train,
+            x_test=x_test,
+            y_train=y_train,
+            y_test=y_test,
+            metadata=metadata,
+            model_name=model_name,
+            model=model,
+            scaling_enable=settings.SCALING_ENABLE,
+            scaler_file=settings.SCALER_FILE,
+            logger=logger,
+        )
+    else:
+        kfold_cross_validation(
+            x_train=x_train,
+            x_test=x_test,
+            y_train=y_train,
+            y_test=y_test,
+            metadata=metadata,
+            models=models,
+            n_splits=settings.KFOLDS,
+            scoring="roc_auc" if model_type == "classification" else "r2",
+            scaling_enable=settings.SCALING_ENABLE,
+            scaler_file=settings.SCALER_FILE,
+            logger=logger,
+        )
+
+
 def run(logger: Logger) -> None:
     settings = load_training_settings(logger)
     setup_mlflow(logger=logger)
@@ -416,103 +469,36 @@ def run(logger: Logger) -> None:
     )
     df = df[settings.FINAL_FEATURES]
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :STATUS_COL],
-        df.iloc[:, STATUS_COL:DEP_TIME_COL],
-        test_size=settings.TEST_SIZE,
-        random_state=42,
-    )
-    if settings.REMOVE_OUTLIERS:
-        x_train_cleaned, y_train_cleaned = remove_outliers(
-            x_train,
-            y_train,
-            q1=settings.Q1_FACTOR,
-            q3=settings.Q3_FACTOR,
-            k=settings.THRESHOLD_FACTOR,
-        )
-    else:
-        x_train_cleaned, y_train_cleaned = x_train, y_train
-
-    # Train the classification model chosen by the user
-    # or perform k-fold cross validation
+    # Classification phase
     logger.info("Classification phase started")
-    if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
-        model_name, model = next(iter(settings.CLASSIFICATION_MODELS.items()))
-        train_model(
-            x_train=x_train_cleaned,
-            x_test=x_test,
-            y_train=y_train_cleaned,
-            y_test=y_test,
-            metadata=metadata,
-            model_name=model_name,
-            model=model,
-            scaling_enable=settings.SCALING_ENABLE,
-            scaler_file=settings.SCALER_FILE,
-            logger=logger,
-        )
-    else:
-        # Perform KFold cross validation
-        kfold_cross_validation(
-            x_train=x_train_cleaned,
-            x_test=x_test,
-            y_train=y_train_cleaned,
-            y_test=y_test,
-            metadata=metadata,
-            models=settings.CLASSIFICATION_MODELS,
-            n_splits=settings.KFOLDS,
-            scoring="roc_auc",
-            scaling_enable=settings.SCALING_ENABLE,
-            scaler_file=settings.SCALER_FILE,
-            logger=logger,
-        )
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(df, STATUS_COL, STATUS_COL, DEP_TIME_COL, settings)
 
-    logger.info("Classification phase ended")
-    x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :STATUS_COL],
-        df.iloc[:, DEP_TIME_COL:],
-        test_size=settings.TEST_SIZE,
-        random_state=42,
+    training_phase(
+        models=settings.CLASSIFICATION_MODELS,
+        x_train=x_train_cleaned,
+        x_test=x_test,
+        y_train=y_train_cleaned,
+        y_test=y_test,
+        metadata=metadata,
+        settings=settings,
+        logger=logger,
+        model_type="classification",
     )
-    if settings.REMOVE_OUTLIERS:
-        x_train_cleaned, y_train_cleaned = remove_outliers(
-            x_train,
-            y_train,
-            q1=settings.Q1_FACTOR,
-            q3=settings.Q3_FACTOR,
-            k=settings.THRESHOLD_FACTOR,
-        )
-    else:
-        x_train_cleaned, y_train_cleaned = x_train, y_train
+    logger.info("Classification phase ended")
 
+    # Regression phase
     logger.info("Regression phase started")
-    # Train the regression model chosen by the user
-    # or perform k-fold cross validation
-    if len(settings.REGRESSION_MODELS.keys()) == 1:
-        model_name, model = next(iter(settings.REGRESSION_MODELS.items()))
-        train_model(
-            x_train=x_train_cleaned,
-            x_test=x_test,
-            y_train=y_train_cleaned,
-            y_test=y_test,
-            metadata=metadata,
-            model_name=model_name,
-            model=model,
-            scaling_enable=settings.SCALING_ENABLE,
-            scaler_file=settings.SCALER_FILE,
-            logger=logger,
-        )
-    else:
-        kfold_cross_validation(
-            x_train=x_train_cleaned,
-            x_test=x_test,
-            y_train=y_train_cleaned,
-            y_test=y_test,
-            metadata=metadata,
-            models=settings.REGRESSION_MODELS,
-            n_splits=settings.KFOLDS,
-            scoring="r2",
-            scaling_enable=settings.SCALING_ENABLE,
-            scaler_file=settings.SCALER_FILE,
-            logger=logger,
-        )
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(df, STATUS_COL, DEP_TIME_COL, None, settings)
+
+    training_phase(
+        models=settings.REGRESSION_MODELS,
+        x_train=x_train_cleaned,
+        x_test=x_test,
+        y_train=y_train_cleaned,
+        y_test=y_test,
+        metadata=metadata,
+        settings=settings,
+        logger=logger,
+        model_type="regression",
+    )
     logger.info("Regression phase ended")
