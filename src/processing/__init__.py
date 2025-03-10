@@ -122,7 +122,7 @@ def preprocessing(
     Calculate CPU diff as the difference between Quota (maximum value), used and
     requested. The same goes for RAM, disk, instances, volumes and public IPs.
 
-    Map creation success and failed creation evente to integers.
+    Mapped the success and failed creation events to integers.
 
     Based on the template, set a complexity value.
 
@@ -136,6 +136,7 @@ def preprocessing(
     logger.info("Pre-process data")
     logger.debug("Initial Dataframe:\n%s", df)
 
+    # Remove NaN values
     df.dropna(inplace=True)
     df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
     df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
@@ -148,9 +149,13 @@ def preprocessing(
         MSG_PUB_IPS_REQ
     ]
     df[DF_GPU] = df[MSG_GPU_REQ]
-    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
-    df.dropna(subset=[DF_STATUS], inplace=True)
     df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates)
+    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
+
+    # Remove rows where the map for df[DF_STATUS] fails
+    df.dropna(subset=[DF_STATUS], inplace=True)
+
+    # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it is the average failure time
     df[DF_DEP_TIME] = np.where(
         df[MSG_DEP_COMPLETION_TIME] != 0.0,
         df[MSG_DEP_COMPLETION_TIME],
@@ -161,6 +166,8 @@ def preprocessing(
         ),
     )
     df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
+
+    # Convert df[DF_TIMESTAMP] and remove rows with NaN values
     df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
     df.dropna(subset=[DF_TIMESTAMP], inplace=True)
 
@@ -191,17 +198,19 @@ def preprocessing(
 
 
 def calculate_failure_percentage(group: pd.DataFrame, row: pd.Series) -> float | None:
+    """Function to calculate the failure percentage"""
     mask = (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP]) & (
-        group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90)
+        group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30)
     )
     filtered_group = group[mask]
     return filtered_group[DF_STATUS].mean()
 
 
 def calculate_avg_success_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate the average success time"""
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
-        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90))
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
         & (group[DF_STATUS] == 0)
     )
     filtered_group = group[mask]
@@ -209,9 +218,10 @@ def calculate_avg_success_time(group: pd.DataFrame, row: pd.Series) -> float:
 
 
 def calculate_avg_failure_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate average failure time"""
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
-        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90))
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
         & (group[DF_STATUS] == 1)
     )
     filtered_group = group[mask]
