@@ -1,4 +1,5 @@
 from logging import Logger
+from typing import Any
 
 import mlflow
 import mlflow.environment_variables
@@ -106,47 +107,17 @@ class TrainingSettings(CommonSettings):
         description="List of final features in the processed Dataset",
     )
 
-    @field_validator("CLASSIFICATION_MODELS", mode="before")
+    @field_validator("CLASSIFICATION_MODELS", mode="after")
     @classmethod
-    def parse_classification_models_params(
-        cls, value: dict[str, dict]
-    ) -> dict[str, dict]:
-        """Verify models and parameters.
+    def parse_classification_models_params(cls, value: dict[str, dict], logger: Logger) -> dict[str, Any]:
+        """Verify the classification models"""
+        return validate_models(value, "classifier", ClassifierMixin, logger)
 
-        Model name (key) must belong to the scikit-learn library.
-        Value must be a dict."""
-        # Get all sklearn models (both classifiers and regressors)
-        if isinstance(value, dict):
-            estimators = dict(all_estimators())
-            for k, v in value.items():
-                assert k in estimators.keys(), (
-                    f"Model '{k}' is not available in scikit-learn."
-                )
-                assert issubclass(estimators[k], ClassifierMixin), (
-                    f"Model '{k}' in not a Classifier model"
-                )
-                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
-        return value
-
-    @field_validator("REGRESSION_MODELS", mode="before")
+    @field_validator("REGRESSION_MODELS", mode="after")
     @classmethod
-    def parse_regression_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
-        """Verify models and parameters.
-
-        Model name (key) must belong to the scikit-learn library.
-        Value must be a dict."""
-        # Get all sklearn models (both classifiers and regressors)
-        if isinstance(value, dict):
-            estimators = dict(all_estimators())
-            for k, v in value.items():
-                assert k in estimators.keys(), (
-                    f"Model '{k}' is not available in scikit-learn."
-                )
-                assert issubclass(estimators[k], RegressorMixin), (
-                    f"Model '{k}' is not a Regressor model"
-                )
-                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
-        return value
+    def parse_regression_models_params(cls, value: dict[str, dict], logger: Logger) -> dict[str, Any]:
+        """Verify the regression models"""
+        return validate_models(value, "regressor", RegressorMixin, logger)
 
 
 class InferenceSettings(CommonSettings):
@@ -182,8 +153,8 @@ class InferenceSettings(CommonSettings):
 
 
 # Function to load the settings
-def load_training_settings() -> TrainingSettings:
-    return TrainingSettings()
+def load_training_settings(logger: Logger) -> TrainingSettings:
+    return TrainingSettings(logger)
 
 
 # Function to load the settings
@@ -219,3 +190,38 @@ def setup_mlflow(*, logger: Logger) -> None:
     except mlflow.exceptions.MlflowException as e:
         logger.error(e.message)
         exit(1)
+
+def validate_models(value: dict[str, dict], model_type: str, model_class: type, logger: Logger) -> dict[str, Any]:
+        """Funzione comune per validare modelli di classificazione o regressione.
+
+        Args:
+            value (dict): Dizionario dei modelli e dei parametri.
+            model_type (str): Tipo di modello ("classifier" o "regressor").
+            model_class (type): Tipo di classe (ClassifierMixin o RegressorMixin).
+
+        Returns:
+            dict: Dizionario con i modelli validati.
+        """
+        models_dict = {}
+        estimators = dict(all_estimators(type_filter=model_type))
+
+        for model_name, model_params in value.items():
+            try:
+                # Get the class of the model
+                model_class = estimators.get(model_name, None)
+
+                if model_class is None:
+                    raise ValueError(f"Model {model_name} not found")
+
+                # Verify that the model belongs to the correct class
+                if not issubclass(model_class, model_class):
+                    raise TypeError(f"The model {model_name} is not a {model_type} model")
+
+                # Create the model object from the parameters
+                model = model_class(**model_params)
+                models_dict[model_name] = model
+
+            except (TypeError, ValueError) as e:
+                logger.error(e.message) #'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
+                exit(1)
+        return models_dict

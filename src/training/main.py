@@ -2,7 +2,6 @@ import base64
 import pickle
 from logging import Logger
 from tempfile import NamedTemporaryFile
-import io
 
 import mlflow
 import mlflow.environment_variables
@@ -25,7 +24,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
-from sklearn.utils import all_estimators
 
 from processing import DF_TIMESTAMP, load_dataset, preprocessing
 from settings import load_training_settings, setup_mlflow
@@ -120,11 +118,13 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
     # Case 3: Models without `feature_importances_` or `coef_`, use SHAP
     else:
         try:
-            explainer = shap.TreeExplainer(model)
+            # If the model is not a tree use KernelExplainer
+            background_data_summarized = shap.sample(x_train_scaled[:50])
+            explainer = shap.KernelExplainer(model.predict_proba, background_data_summarized)
             shap_values = explainer.shap_values(x_train_scaled)
             shap.summary_plot(shap_values, x_train_scaled)
-            # Gives mean values of feayure importance
-            shap_importance = np.mean(np.abs(shap_values), axis=0)
+            # Compute feature importance
+            shap_importance = np.mean(np.abs(shap_values), axis=0)[:, 0]
             feature_importance_df = pd.DataFrame(
                 {"Feature": columns, "Importance": shap_importance}
             ).sort_values(by="Importance", ascending=False)
@@ -132,7 +132,7 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
             logger.debug(feature_importance_df)
             return feature_importance_df
         except Exception as e:
-            print(f"Errore nell'uso di SHAP: {e}")
+            print(f"Error in using SHAP: {e}")
             return None
 
 
@@ -213,7 +213,7 @@ def train_model(
     y_test: pd.DataFrame,
     metadata: MetaData,
     model_name: str,
-    model_params: dict,
+    model: any,
     scaling_enable: bool,
     scaler_file: str,
     logger: Logger,
@@ -224,14 +224,6 @@ def train_model(
     :param model_name: Name of the model to train (e.g. 'RandomForestClassifier').
     :param model_params: Parameters to pass to the model as a dictionary.
     """
-
-    # Dinamically load the model with the requested parameters
-    try:
-        cls = dict(all_estimators()).get(model_name, None)
-        model = cls(**model_params)
-    except TypeError as e:
-        logger.error("Error in '%s' model creation: %s", model_name, e)
-        exit(1)
 
     # Scale x_train if scaling is enabled
     if scaling_enable:
@@ -244,6 +236,7 @@ def train_model(
         x_test_scaled = x_test
         scaler_bytes = None
 
+    model_params = model.get_params()
     # Train the model
     logger.info("Training model '%s' with params: %s", model_name, model_params)
     model.fit(x_train_scaled, y_train.values.ravel())
@@ -256,7 +249,7 @@ def train_model(
     y_train_pred = model.predict(x_train_scaled)
     y_test_pred = model.predict(x_test_scaled)
 
-    if issubclass(cls, ClassifierMixin):
+    if issubclass(type(model), ClassifierMixin):
         metrics = calculate_classification_metrics(
             model=model,
             x_train_scaled=x_train_scaled,
@@ -267,7 +260,7 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
-    elif issubclass(cls, RegressorMixin):
+    elif issubclass(type(model), RegressorMixin):
         metrics = calculate_regression_metrics(
             y_train=y_train,
             y_test=y_test,
@@ -302,7 +295,7 @@ def kfold_cross_validation(
     y_train: pd.DataFrame,
     y_test: pd.DataFrame,
     metadata: MetaData,
-    models_params: dict[str, dict],
+    models: dict[str, object],
     logger: Logger,
     n_splits: int = 5,
     scoring: str = "roc_auc",
@@ -320,16 +313,9 @@ def kfold_cross_validation(
     # Dictionary to store scores
     mean_scores = {}
     # Get all estimators
-    all_models = dict(all_estimators())
 
-    for model_name, params in models_params.items():
+    for model_name, model in models.items():
         # Fetch the model class
-        ModelClass = all_models.get(model_name)
-        if ModelClass is None:
-            raise ValueError(f"Model {model_name} not found in sklearn estimators.")
-
-        # Instantiate the model with parameters
-        model = ModelClass(**params)
 
         # Scale x if scaling is enabled
         if scaling_enable:
@@ -354,6 +340,7 @@ def kfold_cross_validation(
         )
     best_model_name = max(mean_scores, key=mean_scores.get)
     logger.info("K-Fold Cross Validation completed")
+    model = models[best_model_name]
     train_model(
         x_train=x_train,
         x_test=x_test,
@@ -361,7 +348,7 @@ def kfold_cross_validation(
         y_test=y_test,
         metadata=metadata,
         model_name=best_model_name,
-        model_params=models_params[best_model_name],
+        model=model,
         scaling_enable=scaling_enable,
         scaler_file=scaler_file,
         logger=logger,
@@ -411,7 +398,7 @@ def log_on_mlflow(
 
 
 def run(logger: Logger) -> None:
-    settings = load_training_settings()
+    settings = load_training_settings(logger)
     setup_mlflow(logger=logger)
 
     df = load_dataset(settings=settings, logger=logger)
@@ -450,15 +437,15 @@ def run(logger: Logger) -> None:
     # or perform k-fold cross validation
     logger.info("Classification phase started")
     if len(settings.CLASSIFICATION_MODELS.keys()) == 1:
-        model = next(iter(settings.CLASSIFICATION_MODELS))
+        model_name, model = next(iter(settings.CLASSIFICATION_MODELS.items()))
         train_model(
             x_train=x_train_cleaned,
             x_test=x_test,
             y_train=y_train_cleaned,
             y_test=y_test,
             metadata=metadata,
-            model_name=model,
-            model_params=settings.CLASSIFICATION_MODELS.get(model),
+            model_name=model_name,
+            model=model,
             scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
@@ -471,7 +458,7 @@ def run(logger: Logger) -> None:
             y_train=y_train_cleaned,
             y_test=y_test,
             metadata=metadata,
-            models_params=settings.CLASSIFICATION_MODELS,
+            models=settings.CLASSIFICATION_MODELS,
             n_splits=settings.KFOLDS,
             scoring="roc_auc",
             scaling_enable=settings.SCALING_ENABLE,
@@ -501,7 +488,7 @@ def run(logger: Logger) -> None:
     # Train the regression model chosen by the user
     # or perform k-fold cross validation
     if len(settings.REGRESSION_MODELS.keys()) == 1:
-        model = next(iter(settings.REGRESSION_MODELS))
+        model = next(iter(settings.REGRESSION_MODELS.items()))
         train_model(
             x_train=x_train_cleaned,
             x_test=x_test,
