@@ -161,7 +161,8 @@ def preprocessing(
         ),
     )
     df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
-    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP])
+    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
+    df.dropna(subset=[DF_TIMESTAMP], inplace=True)
 
     # Calculate historical features.
     grouped = df.groupby([DF_PROVIDER, MSG_TEMPLATE_NAME])
@@ -194,7 +195,7 @@ def calculate_failure_percentage(group: pd.DataFrame, row: pd.Series) -> float |
         group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=90)
     )
     filtered_group = group[mask]
-    return filtered_group[DF_STATUS].mean() if not filtered_group.empty else None
+    return filtered_group[DF_STATUS].mean()
 
 
 def calculate_avg_success_time(group: pd.DataFrame, row: pd.Series) -> float:

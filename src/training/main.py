@@ -120,7 +120,9 @@ def get_feature_importance(model, columns, x_train_scaled, logger):
         try:
             # If the model is not a tree use KernelExplainer
             background_data_summarized = shap.sample(x_train_scaled[:50])
-            explainer = shap.KernelExplainer(model.predict_proba, background_data_summarized)
+            explainer = shap.KernelExplainer(
+                model.predict_proba, background_data_summarized
+            )
             shap_values = explainer.shap_values(x_train_scaled)
             shap.summary_plot(shap_values, x_train_scaled)
             # Compute feature importance
@@ -302,7 +304,6 @@ def kfold_cross_validation(
     scaling_enable: bool,
     scaler_file: str,
 ) -> None:
-
     logger.info("Perform K-Fold Cross Validation")
     x = x_train
     y = y_train
@@ -375,7 +376,7 @@ def log_on_mlflow(
         for metric, value in metrics.items():
             mlflow.log_metric(metric, value)
 
-        #Log the sklearn model and register
+        # Log the sklearn model and register
         mlflow.sklearn.log_model(
             signature=False,
             sk_model=model,
@@ -392,13 +393,15 @@ def log_on_mlflow(
         for key, value in metadata.model_dump().items():
             mlflow.set_tag(key, value)
 
-        with NamedTemporaryFile(delete=True, prefix="feature_importance", suffix=".csv") as temp_file:
+        with NamedTemporaryFile(
+            delete=True, prefix="feature_importance", suffix=".csv"
+        ) as temp_file:
             feature_importance_df.to_csv(temp_file.name, index=False)
             mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
 def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
-    """ Divide the dataset in training and test sets and remove outliers if enabled"""
+    """Divide the dataset in training and test sets and remove outliers if enabled"""
     x_train, x_test, y_train, y_test = train_test_split(
         df.iloc[:, :end_col_x],
         df.iloc[:, start_col_y:end_col_y],
@@ -408,7 +411,8 @@ def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
 
     if settings.REMOVE_OUTLIERS:
         x_train, y_train = remove_outliers(
-            x_train, y_train,
+            x_train,
+            y_train,
             q1=settings.Q1_FACTOR,
             q3=settings.Q3_FACTOR,
             k=settings.THRESHOLD_FACTOR,
@@ -417,7 +421,9 @@ def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
     return x_train, x_test, y_train, y_test
 
 
-def training_phase(models, x_train, x_test, y_train, y_test, metadata, settings, logger, model_type):
+def training_phase(
+    models, x_train, x_test, y_train, y_test, metadata, settings, logger, model_type
+):
     """Train the regression model chosen by the user or perform k-fold cross validation
     and then train the best model"""
     if len(models) == 1:
@@ -461,8 +467,8 @@ def run(logger: Logger) -> None:
         logger=logger,
     )
     metadata = MetaData(
-        start_time=df[DF_TIMESTAMP].max().strftime('%Y-%m-%d %H:%M:%S'),
-        end_time=df[DF_TIMESTAMP].min().strftime('%Y-%m-%d %H:%M:%S'),
+        start_time=df[DF_TIMESTAMP].max().strftime("%Y-%m-%d %H:%M:%S"),
+        end_time=df[DF_TIMESTAMP].min().strftime("%Y-%m-%d %H:%M:%S"),
         features=settings.FINAL_FEATURES,
         features_number=len(settings.FINAL_FEATURES),
         remove_outliers=settings.REMOVE_OUTLIERS,
@@ -471,7 +477,9 @@ def run(logger: Logger) -> None:
 
     # Classification phase
     logger.info("Classification phase started")
-    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(df, STATUS_COL, STATUS_COL, DEP_TIME_COL, settings)
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
+        df, STATUS_COL, STATUS_COL, DEP_TIME_COL, settings
+    )
 
     training_phase(
         models=settings.CLASSIFICATION_MODELS,
@@ -488,7 +496,9 @@ def run(logger: Logger) -> None:
 
     # Regression phase
     logger.info("Regression phase started")
-    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(df, STATUS_COL, DEP_TIME_COL, None, settings)
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
+        df, STATUS_COL, DEP_TIME_COL, None, settings
+    )
 
     training_phase(
         models=settings.REGRESSION_MODELS,

@@ -109,13 +109,17 @@ class TrainingSettings(CommonSettings):
 
     @field_validator("CLASSIFICATION_MODELS", mode="after")
     @classmethod
-    def parse_classification_models_params(cls, value: dict[str, dict], logger: Logger) -> dict[str, Any]:
+    def parse_classification_models_params(
+        cls, value: dict[str, dict], logger: Logger
+    ) -> dict[str, Any]:
         """Verify the classification models"""
         return validate_models(value, "classifier", ClassifierMixin, logger)
 
     @field_validator("REGRESSION_MODELS", mode="after")
     @classmethod
-    def parse_regression_models_params(cls, value: dict[str, dict], logger: Logger) -> dict[str, Any]:
+    def parse_regression_models_params(
+        cls, value: dict[str, dict], logger: Logger
+    ) -> dict[str, Any]:
         """Verify the regression models"""
         return validate_models(value, "regressor", RegressorMixin, logger)
 
@@ -191,37 +195,42 @@ def setup_mlflow(*, logger: Logger) -> None:
         logger.error(e.message)
         exit(1)
 
-def validate_models(value: dict[str, dict], model_type: str, model_class: type, logger: Logger) -> dict[str, Any]:
-        """Funzione comune per validare modelli di classificazione o regressione.
 
-        Args:
-            value (dict): Dizionario dei modelli e dei parametri.
-            model_type (str): Tipo di modello ("classifier" o "regressor").
-            model_class (type): Tipo di classe (ClassifierMixin o RegressorMixin).
+def validate_models(
+    value: dict[str, dict], model_type: str, model_class: type, logger: Logger
+) -> dict[str, Any]:
+    """Function to validate classifiers and regressors
 
-        Returns:
-            dict: Dizionario con i modelli validati.
-        """
-        models_dict = {}
-        estimators = dict(all_estimators(type_filter=model_type))
+    Args:
+        value (dict): Dictionary with models and parameters
+        model_type (str): Model type ("classifier" or "regressor").
+        model_class (type): Class type (ClassifierMixin o RegressorMixin).
 
-        for model_name, model_params in value.items():
-            try:
-                # Get the class of the model
-                model_class = estimators.get(model_name, None)
+    Returns:
+        dict: dictionary where values are the model objects
+    """
+    models_dict = {}
+    estimators = dict(all_estimators(type_filter=model_type))
 
-                if model_class is None:
-                    raise ValueError(f"Model {model_name} not found")
+    for model_name, model_params in value.items():
+        try:
+            # Get the class of the model
+            model_class = estimators.get(model_name, None)
 
-                # Verify that the model belongs to the correct class
-                if not issubclass(model_class, model_class):
-                    raise TypeError(f"The model {model_name} is not a {model_type} model")
+            if model_class is None:
+                raise ValueError(f"Model {model_name} not found")
 
-                # Create the model object from the parameters
-                model = model_class(**model_params)
-                models_dict[model_name] = model
+            # Verify that the model belongs to the correct class
+            if not issubclass(model_class, model_class):
+                raise TypeError(f"The model {model_name} is not a {model_type} model")
 
-            except (TypeError, ValueError) as e:
-                logger.error(e.message) #'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
-                exit(1)
-        return models_dict
+            # Create the model object from the parameters
+            model = model_class(**model_params)
+            models_dict[model_name] = model
+
+        except (TypeError, ValueError) as e:
+            logger.error(
+                e.message
+            )  #'pydantic_core._pydantic_core.ValidationInfo' object has no attribute 'error'
+            exit(1)
+    return models_dict
