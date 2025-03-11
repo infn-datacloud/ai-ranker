@@ -32,41 +32,6 @@ from training.models import ClassificationMetrics, MetaData, RegressionMetrics
 STATUS_COL = -2
 DEP_TIME_COL = -1
 
-single_vm = [
-    "single-vm/single_vm.yaml",
-    "single-vm/single_vm_with_volume.yaml",
-    "single-vm/private-net/single_vm.yaml",
-    "single-vm/private-net/single_vm_with_volume.yaml",
-]
-single_vm_complex = [
-    "single-vm/cloud_storage_service.yaml",
-    "single-vm/elasticsearch_kibana.yaml",
-    "single-vm/iam_voms-aa.yaml",
-]
-k8s = [
-    "kubernetes/k8s_cluster.yaml",
-    "kubernetes/k8s_cluster_with_addons.yaml",
-    "kubernetes/htcondor_k8s.yaml",
-    "kubernetes/private-net/k8s_cluster.yaml",
-    "kubernetes/spark_cluster.yaml",
-]
-docker = [
-    "docker/run_docker.yaml",
-    "docker/docker_compose.yaml",
-    "docker/docker_compose_with_volume.yaml",
-    "docker/run_docker_with_volume.yaml",
-]
-jupyter = [
-    "jupyter/jupyter_vm.yaml",
-    "jupyter/jupyter_matlab.yaml",
-    "jupyter/ml_infn.yaml",
-    "jupyter/cygno_experiment.yaml",
-    "jupyter/private-net/jupyter_vm.yaml ",
-]
-all = single_vm + single_vm_complex + k8s + docker + jupyter
-simple = single_vm + docker
-complex = single_vm_complex + k8s + jupyter
-
 
 def remove_outliers_from_dataframe(
     df: pd.DataFrame, *, q1: float = 0.25, q3: float = 0.75, k: float = 1.5
@@ -94,7 +59,8 @@ def remove_outliers(
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def get_feature_importance(model, columns, x_train_scaled, logger):
+def get_feature_importance(model, columns, x_train_scaled, logger) -> pd.DataFrame:
+    """Calculate feature importance in different ways depending on the model"""
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
         feature_importances = model.feature_importances_
@@ -220,19 +186,18 @@ def train_model(
     scaler_file: str,
     logger: Logger,
 ) -> None:
-    """
-    Function to train a generic sklearn ML model
-
-    :param model_name: Name of the model to train (e.g. 'RandomForestClassifier').
-    :param model_params: Parameters to pass to the model as a dictionary.
-    """
+    """Function to train a generic sklearn ML model"""
 
     # Scale x_train if scaling is enabled
     if scaling_enable:
         scaler = RobustScaler()
-        x_train_scaled = scaler.fit_transform(x_train)
+        x_train_scaled = pd.DataFrame(
+            scaler.fit_transform(x_train), columns=x_train.columns, index=x_train.index
+        )
         scaler_bytes = pickle.dumps(scaler)
-        x_test_scaled = scaler.transform(x_test)
+        x_test_scaled = pd.DataFrame(
+            scaler.transform(x_test), columns=x_test.columns, index=x_test.index
+        )
     else:
         x_train_scaled = x_train
         x_test_scaled = x_test
@@ -251,6 +216,7 @@ def train_model(
     y_train_pred = model.predict(x_train_scaled)
     y_test_pred = model.predict(x_test_scaled)
 
+    # Calculate metrics
     if issubclass(type(model), ClassifierMixin):
         metrics = calculate_classification_metrics(
             model=model,
@@ -274,6 +240,7 @@ def train_model(
     logger.info("Model successfully trained and metrics computed")
     logger.info("Logging the model on MLFlow")
     try:
+        # Log the model on MLFlow
         log_on_mlflow(
             model_params,
             model_name,
@@ -304,6 +271,7 @@ def kfold_cross_validation(
     scaling_enable: bool,
     scaler_file: str,
 ) -> None:
+    """Function to perform K-Fold Cross Validation"""
     logger.info("Perform K-Fold Cross Validation")
     x = x_train
     y = y_train
@@ -367,6 +335,7 @@ def log_on_mlflow(
     scaler_file: str,
     scaler_bytes: bytes,
 ):
+    """Function to log the model on MLFlow"""
     # Logging on MLflow
     with mlflow.start_run():
         # Log the parameters
@@ -457,6 +426,10 @@ def training_phase(
 
 
 def run(logger: Logger) -> None:
+    """Function to load the dataset, do preprocessing, perform training and save the
+    model on MLFlow"""
+
+    # Load the settings and setup MLFlow
     try:
         settings = load_training_settings()
     except (ValueError, TypeError) as e:
@@ -464,6 +437,7 @@ def run(logger: Logger) -> None:
         exit(1)
     setup_mlflow(logger=logger)
 
+    # Load the dataset and do preprocessing
     df = load_dataset(settings=settings, logger=logger)
     df = preprocessing(
         df=df,
@@ -479,7 +453,7 @@ def run(logger: Logger) -> None:
     )
     df = df[settings.FINAL_FEATURES]
 
-    # Classification phase
+    # Classification training phase
     logger.info("Classification phase started")
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
         df, STATUS_COL, STATUS_COL, DEP_TIME_COL, settings
@@ -498,7 +472,7 @@ def run(logger: Logger) -> None:
     )
     logger.info("Classification phase ended")
 
-    # Regression phase
+    # Regression training phase
     logger.info("Regression phase started")
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
         df, STATUS_COL, DEP_TIME_COL, None, settings

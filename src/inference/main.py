@@ -146,7 +146,7 @@ def classification_predict(
             X_new = pd.DataFrame([data], columns=feature_input)
             # scale x_new if scaling is enabled
             if scaling_enable:
-                X_new_scaled = scaler.transform(X_new)
+                X_new_scaled = pd.DataFrame(scaler.transform(X_new), columns=X_new.columns, index=X_new.index)
             else:
                 X_new_scaled = X_new
             y_pred_new = model.predict_proba(X_new_scaled)
@@ -192,7 +192,7 @@ def regression_predict(
             X_new = pd.DataFrame([data], columns=feature_input)
             # scale x_new if scaling is enabled
             if scaling_enable:
-                X_new_scaled = scaler.transform(X_new)
+                X_new_scaled = pd.DataFrame(scaler.transform(X_new), columns=X_new.columns, index=X_new.index)
             else:
                 X_new_scaled = X_new
             y_pred_new = model.predict(X_new_scaled)
