@@ -1,4 +1,5 @@
 from logging import Logger
+from typing import Any
 
 import mlflow
 import mlflow.environment_variables
@@ -61,6 +62,14 @@ class CommonSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
+    SCALER_FILE: str = Field(
+        default="scaler.pkl", description="Default file where store the scaler"
+    )
+
+    SCALING_ENABLE: bool = Field(
+        default=False, description="Perform the scaling of X features"
+    )
+
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
@@ -70,11 +79,11 @@ class CommonSettings(BaseSettings):
 class TrainingSettings(CommonSettings):
     """Definition of environment variables related to the Training script."""
 
-    CLASSIFICATION_MODELS: dict[str, dict] = Field(
+    CLASSIFICATION_MODELS: dict[str, ClassifierMixin] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
-    REGRESSION_MODELS: dict[str, dict] = Field(
+    REGRESSION_MODELS: dict[str, RegressorMixin] = Field(
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
@@ -102,43 +111,17 @@ class TrainingSettings(CommonSettings):
     @classmethod
     def parse_classification_models_params(
         cls, value: dict[str, dict]
-    ) -> dict[str, dict]:
-        """Verify models and parameters.
-
-        Model name (key) must belong to the scikit-learn library.
-        Value must be a dict."""
-        # Get all sklearn models (both classifiers and regressors)
-        if isinstance(value, dict):
-            estimators = dict(all_estimators())
-            for k, v in value.items():
-                assert k in estimators.keys(), (
-                    f"Model '{k}' is not available in scikit-learn."
-                )
-                assert issubclass(estimators[k], ClassifierMixin), (
-                    f"Model '{k}' in not a Classifier model"
-                )
-                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
-        return value
+    ) -> dict[str, ClassifierMixin]:
+        """Verify the classification models"""
+        return validate_models(value, "classifier", ClassifierMixin)
 
     @field_validator("REGRESSION_MODELS", mode="before")
     @classmethod
-    def parse_regression_models_params(cls, value: dict[str, dict]) -> dict[str, dict]:
-        """Verify models and parameters.
-
-        Model name (key) must belong to the scikit-learn library.
-        Value must be a dict."""
-        # Get all sklearn models (both classifiers and regressors)
-        if isinstance(value, dict):
-            estimators = dict(all_estimators())
-            for k, v in value.items():
-                assert k in estimators.keys(), (
-                    f"Model '{k}' is not available in scikit-learn."
-                )
-                assert issubclass(estimators[k], RegressorMixin), (
-                    f"Model '{k}' is not a Regressor model"
-                )
-                assert isinstance(v, dict), f"Value of '{k}' is not a dictionary: {v}."
-        return value
+    def parse_regression_models_params(
+        cls, value: dict[str, dict]
+    ) -> dict[str, RegressorMixin]:
+        """Verify the regression models"""
+        return validate_models(value, "regressor", RegressorMixin)
 
 
 class InferenceSettings(CommonSettings):
@@ -173,23 +156,23 @@ class InferenceSettings(CommonSettings):
     )
 
 
-# Function to load the settings
 def load_training_settings() -> TrainingSettings:
+    """Function to load the training settings"""
     return TrainingSettings()
 
 
-# Function to load the settings
 def load_inference_settings() -> InferenceSettings:
+    """Function to load the inference settings"""
     return InferenceSettings()
 
 
-# Function to load the settings
 def load_mlflow_settings() -> MLFlowSettings:
+    """Function to load the mlflow settings"""
     return MLFlowSettings()
 
 
 def setup_mlflow(*, logger: Logger) -> None:
-    """Set the mlflow server uri and experiment."""
+    """Function to set up the mlflow settings"""
     logger.info("Setting up MLFlow service communication")
     settings = load_mlflow_settings()
     try:
@@ -211,3 +194,37 @@ def setup_mlflow(*, logger: Logger) -> None:
     except mlflow.exceptions.MlflowException as e:
         logger.error(e.message)
         exit(1)
+
+
+def validate_models(
+    value: dict[str, dict], model_type: str, model_class: type
+) -> dict[str, Any]:
+    """Function to validate classifiers and regressors
+
+    Args:
+        value (dict): Dictionary with models and parameters
+        model_type (str): Model type ("classifier" or "regressor").
+        model_class (type): Class type (ClassifierMixin o RegressorMixin).
+
+    Returns:
+        dict: dictionary where values are the model objects
+    """
+    models_dict = {}
+    estimators = dict(all_estimators(type_filter=model_type))
+
+    for model_name, model_params in value.items():
+        # Get the class of the model
+        model_class = estimators.get(model_name, None)
+
+        if model_class is None:
+            raise ValueError(f"Model {model_name} not found")
+
+        # Verify that the model belongs to the correct class
+        if not issubclass(model_class, model_class):
+            raise TypeError(f"The model {model_name} is not a {model_type} model")
+
+        # Create the model object from the parameters
+        model = model_class(**model_params)
+        models_dict[model_name] = model
+
+    return models_dict
