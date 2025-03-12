@@ -105,8 +105,8 @@ def get_feature_importance(
             logger.debug(feature_importance_df)
             return feature_importance_df
         except Exception as e:
-            print(f"Error in using SHAP: {e}")
-            return None
+            logger.error("Error in using SHAP: %s", e)
+            exit(1)
 
 
 def calculate_classification_metrics(
@@ -121,6 +121,7 @@ def calculate_classification_metrics(
     logger: Logger,
 ) -> dict[str, float]:
     """Compute Metrics on a Classification Model."""
+    logger.info("Calculate classification metrics")
     train_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_train, y_train_pred),
         auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
@@ -157,7 +158,7 @@ def calculate_regression_metrics(
     logger: Logger,
 ) -> dict[str, float]:
     """Compute Metrics on a Regression Model."""
-
+    logger.info("Calculate regression metrics")
     train_metrics = RegressionMetrics(
         mse=mean_squared_error(y_train, y_train_pred),
         rmse=np.sqrt(mean_squared_error(y_train, y_train_pred)),
@@ -260,6 +261,7 @@ def train_model(
         logger.info("Model %s successfully logged on MLflow", model_name)
     except Exception as e:
         logger.error("Error in logging the model in MLFlow server: %s", e)
+        exit(1)
 
 
 def kfold_cross_validation(
@@ -312,7 +314,8 @@ def kfold_cross_validation(
         )
 
     best_model_name = max(mean_scores, key=mean_scores.get)
-    logger.info("K-Fold Cross Validation completed")
+    logger.info("K-Fold Cross Validation completed. Best model is: %s", best_model_name)
+
     model = models[best_model_name]
     train_model(
         x_train=x_train,
