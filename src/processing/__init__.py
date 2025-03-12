@@ -4,6 +4,7 @@ from logging import Logger
 import numpy as np
 import pandas as pd
 from kafka import KafkaConsumer, TopicPartition
+from kafka.errors import NoBrokersAvailable
 
 from settings import InferenceSettings, TrainingSettings
 
@@ -72,19 +73,28 @@ def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
 
 
 def load_dataset_from_kafka(
-    kafka_server_url: str, topic: str, partition: int, offset: int = 0
+    kafka_server_url: str,
+    topic: str,
+    logger: Logger,
+    *,
+    partition: int = 0,
+    offset: int = 0,
 ):
     """Load from kafka the dataset."""
-    consumer = KafkaConsumer(
-        # topic,
-        bootstrap_servers=kafka_server_url,
-        auto_offset_reset="earliest",
-        # enable_auto_commit=False,
-        value_deserializer=lambda x: json.loads(
-            x.decode("utf-8")
-        ),  # deserializza il JSON
-        consumer_timeout_ms=500,
-    )
+    try:
+        consumer = KafkaConsumer(
+            # topic,
+            bootstrap_servers=kafka_server_url,
+            auto_offset_reset="earliest",
+            # enable_auto_commit=False,
+            value_deserializer=lambda x: json.loads(
+                x.decode("utf-8")
+            ),  # deserializza il JSON
+            consumer_timeout_ms=500,
+        )
+    except NoBrokersAvailable:
+        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
+        exit(1)
 
     tp = TopicPartition(topic, partition)
     consumer.assign([tp])
@@ -108,6 +118,7 @@ def load_dataset(
         topic=settings.KAFKA_TRAINING_TOPIC,
         partition=0,
         offset=765,
+        logger=logger,
     )
 
 
@@ -155,7 +166,8 @@ def preprocessing(
     # Remove rows where the map for df[DF_STATUS] fails
     df.dropna(subset=[DF_STATUS], inplace=True)
 
-    # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it is the average failure time
+    # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it
+    # is the average failure time
     df[DF_DEP_TIME] = np.where(
         df[MSG_DEP_COMPLETION_TIME] != 0.0,
         df[MSG_DEP_COMPLETION_TIME],
@@ -197,7 +209,7 @@ def preprocessing(
     return df
 
 
-def calculate_failure_percentage(group: pd.DataFrame, row: pd.Series) -> float | None:
+def calculate_failure_percentage(group: pd.DataFrame, row: pd.Series) -> float:
     """Function to calculate the failure percentage"""
     mask = (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP]) & (
         group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30)
