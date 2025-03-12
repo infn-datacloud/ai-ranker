@@ -61,7 +61,7 @@ def remove_outliers(
 
 def get_feature_importance(
     model: BaseEstimator,
-    columns: pd.Index[str],
+    columns: pd.Index,
     x_train_scaled: pd.DataFrame,
     logger: Logger,
 ) -> pd.DataFrame:
