@@ -57,6 +57,12 @@ class CommonSettings(BaseSettings):
     KAFKA_TRAINING_TOPIC: str = Field(
         default="training", description="Kafka default topic."
     )
+    KAFKA_TRAINING_TOPIC_PARTITION: int = Field(
+        default=0, description="Training topic partition assigned to this consumer."
+    )
+    KAFKA_TRAINING_TOPIC_OFFSET: int = Field(
+        default=0, description="Training topic read offset."
+    )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
@@ -154,6 +160,15 @@ class InferenceSettings(CommonSettings):
         description="Sort providers putting them with exact flavour in front",
     )
 
+    KAFKA_INFERENCE_TOPIC: str = Field(
+        default="inference", description="Kafka default inference topic."
+    )
+    KAFKA_INFERENCE_TOPIC_PARTITION: int = Field(
+        default=0, description="Inference topic partition assigned to this consumer."
+    )
+    KAFKA_INFERENCE_TOPIC_OFFSET: int = Field(
+        default=0, description="Inference topic read offset."
+    )
 
 def load_training_settings(logger: Logger) -> TrainingSettings:
     """Function to load the training settings"""
