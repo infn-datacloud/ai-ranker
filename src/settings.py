@@ -4,7 +4,7 @@ from typing import Any
 import mlflow
 import mlflow.environment_variables
 from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
 
@@ -156,27 +156,38 @@ class InferenceSettings(CommonSettings):
     )
 
 
-def load_training_settings() -> TrainingSettings:
+def load_training_settings(logger: Logger) -> TrainingSettings:
     """Function to load the training settings"""
-    return TrainingSettings()
+    try:
+        return TrainingSettings()
+    except (ValidationError, SettingsError) as e:
+        logger.error(e)
+        exit(1)
 
 
-def load_inference_settings() -> InferenceSettings:
+def load_inference_settings(logger: Logger) -> InferenceSettings:
     """Function to load the inference settings"""
-    return InferenceSettings()
+    try:
+        return InferenceSettings()
+    except (ValidationError, SettingsError) as e:
+        logger.error(e)
+        exit(1)
 
 
-def load_mlflow_settings() -> MLFlowSettings:
+def load_mlflow_settings(logger: Logger) -> MLFlowSettings:
     """Function to load the mlflow settings"""
-    return MLFlowSettings()
+    try:
+        return MLFlowSettings()
+    except (ValidationError, SettingsError) as e:
+        logger.error(e)
+        exit(1)
 
 
 def setup_mlflow(*, logger: Logger) -> None:
     """Function to set up the mlflow settings"""
     logger.info("Setting up MLFlow service communication")
+    settings = load_mlflow_settings(logger=logger)
     try:
-        settings = load_mlflow_settings()
-
         mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
             settings.MLFLOW_HTTP_REQUEST_TIMEOUT
         )
@@ -192,9 +203,6 @@ def setup_mlflow(*, logger: Logger) -> None:
 
         mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-    except ValidationError as e:
-        logger.error(e)
-        exit(1)
     except mlflow.exceptions.MlflowException as e:
         logger.error(e.message)
         exit(1)

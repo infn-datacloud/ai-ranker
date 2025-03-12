@@ -9,7 +9,6 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
-from pydantic import ValidationError
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
@@ -456,11 +455,7 @@ def run(logger: Logger) -> None:
     model on MLFlow"""
 
     # Load the settings and setup MLFlow
-    try:
-        settings = load_training_settings()
-    except ValidationError as e:
-        logger.error(e)
-        exit(1)
+    settings = load_training_settings(logger=logger)
     setup_mlflow(logger=logger)
 
     # Load the dataset and do preprocessing

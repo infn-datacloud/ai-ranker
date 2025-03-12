@@ -312,7 +312,7 @@ def create_message(sorted_results: dict, deployment_uuid: str) -> str:
 
 
 def run(logger: Logger):
-    settings = load_inference_settings()
+    settings = load_inference_settings(logger=logger)
     setup_mlflow(logger=logger)
 
     classification_model_name = settings.CLASSIFICATION_MODEL_NAME
