@@ -51,23 +51,22 @@ class CommonSettings(BaseSettings):
         default=None, description="Name of the local dataset."
     )
 
-    KAFKA_URL: str = Field(
+    KAFKA_HOSTNAME: str = Field(
         default="localhost:9092", description="Kafka server endpoint."
     )
     KAFKA_TRAINING_TOPIC: str = Field(
-        default="inference", description="Kafka default topic."
+        default="training", description="Kafka default topic."
     )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
     )
 
-    SCALER_FILE: str = Field(
-        default="scaler.pkl", description="Default file where store the scaler"
-    )
-
     SCALING_ENABLE: bool = Field(
         default=False, description="Perform the scaling of X features"
+    )
+    SCALER_FILE: str = Field(
+        default="scaler.pkl", description="Default file where store the scaler"
     )
 
     class Config:
