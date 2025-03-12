@@ -121,8 +121,8 @@ def load_dataset(
     return load_dataset_from_kafka(
         kafka_server_url=str(settings.KAFKA_HOSTNAME),
         topic=settings.KAFKA_TRAINING_TOPIC,
-        partition=0,
-        offset=765,
+        partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+        offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
         logger=logger,
     )
 
