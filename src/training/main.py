@@ -9,7 +9,7 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
-from sklearn.base import ClassifierMixin, RegressorMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -26,7 +26,7 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
 from processing import DF_TIMESTAMP, load_dataset, preprocessing
-from settings import load_training_settings, setup_mlflow
+from settings import TrainingSettings, load_training_settings, setup_mlflow
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
 
 STATUS_COL = -2
@@ -59,7 +59,12 @@ def remove_outliers(
     return filtered.iloc[:, :-1], filtered.iloc[:, -1]
 
 
-def get_feature_importance(model, columns, x_train_scaled, logger) -> pd.DataFrame:
+def get_feature_importance(
+    model: BaseEstimator,
+    columns: pd.Index[str],
+    x_train_scaled: pd.DataFrame,
+    logger: Logger,
+) -> pd.DataFrame:
     """Calculate feature importance in different ways depending on the model"""
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
@@ -181,7 +186,7 @@ def train_model(
     y_test: pd.DataFrame,
     metadata: MetaData,
     model_name: str,
-    model: any,
+    model: BaseEstimator,
     scaling_enable: bool,
     scaler_file: str,
     logger: Logger,
@@ -264,10 +269,9 @@ def kfold_cross_validation(
     y_train: pd.DataFrame,
     y_test: pd.DataFrame,
     metadata: MetaData,
-    models: dict[str, object],
+    models: dict[str, BaseEstimator],
     logger: Logger,
     n_splits: int = 5,
-    scoring: str = "roc_auc",
     scaling_enable: bool,
     scaler_file: str,
 ) -> None:
@@ -284,8 +288,6 @@ def kfold_cross_validation(
     # Get all estimators
 
     for model_name, model in models.items():
-        # Fetch the model class
-
         # Scale x if scaling is enabled
         if scaling_enable:
             scaler = RobustScaler()
@@ -294,6 +296,7 @@ def kfold_cross_validation(
             x_scaled = x
 
         # Perform cross-validation
+        scoring = "roc_auc" if issubclass(type(model), ClassifierMixin) else "r2"
         scores = cross_val_score(
             model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
         )
@@ -307,6 +310,7 @@ def kfold_cross_validation(
             np.mean(scores),
             np.std(scores),
         )
+
     best_model_name = max(mean_scores, key=mean_scores.get)
     logger.info("K-Fold Cross Validation completed")
     model = models[best_model_name]
@@ -327,7 +331,7 @@ def kfold_cross_validation(
 def log_on_mlflow(
     model_params: dict,
     model_name: str,
-    model: any,
+    model: BaseEstimator,
     metrics: dict,
     metadata: MetaData,
     feature_importance_df: pd.DataFrame,
@@ -369,10 +373,21 @@ def log_on_mlflow(
             mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
-def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
+def split_and_clean_data(
+    df: pd.DataFrame,
+    *,
+    start_col_x: int | None = None,
+    end_col_x: int | None = None,
+    start_col_y: int | None = None,
+    end_col_y: int | None = None,
+    settings: TrainingSettings,
+):
     """Divide the dataset in training and test sets and remove outliers if enabled"""
+    if start_col_y is None:
+        start_col_y = end_col_x
+
     x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, :end_col_x],
+        df.iloc[:, start_col_x:end_col_x],
         df.iloc[:, start_col_y:end_col_y],
         test_size=settings.TEST_SIZE,
         random_state=42,
@@ -391,7 +406,15 @@ def split_and_clean_data(df, end_col_x, start_col_y, end_col_y, settings):
 
 
 def training_phase(
-    models, x_train, x_test, y_train, y_test, metadata, settings, logger, model_type
+    *,
+    models: list[BaseEstimator],
+    x_train: pd.DataFrame,
+    x_test: pd.DataFrame,
+    y_train: pd.DataFrame,
+    y_test: pd.DataFrame,
+    metadata: MetaData,
+    settings: TrainingSettings,
+    logger: Logger,
 ):
     """Train the regression model chosen by the user or perform k-fold cross validation
     and then train the best model"""
@@ -418,7 +441,6 @@ def training_phase(
             metadata=metadata,
             models=models,
             n_splits=settings.KFOLDS,
-            scoring="roc_auc" if model_type == "classification" else "r2",
             scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
             logger=logger,
@@ -456,7 +478,7 @@ def run(logger: Logger) -> None:
     # Classification training phase
     logger.info("Classification phase started")
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
-        df, STATUS_COL, STATUS_COL, DEP_TIME_COL, settings
+        df, end_col_x=STATUS_COL, end_col_y=DEP_TIME_COL, settings=settings
     )
 
     training_phase(
@@ -468,14 +490,13 @@ def run(logger: Logger) -> None:
         metadata=metadata,
         settings=settings,
         logger=logger,
-        model_type="classification",
     )
     logger.info("Classification phase ended")
 
     # Regression training phase
     logger.info("Regression phase started")
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
-        df, STATUS_COL, DEP_TIME_COL, None, settings
+        df, end_col_x=STATUS_COL, start_col_y=DEP_TIME_COL, settings=settings
     )
 
     training_phase(
@@ -487,6 +508,5 @@ def run(logger: Logger) -> None:
         metadata=metadata,
         settings=settings,
         logger=logger,
-        model_type="regression",
     )
     logger.info("Regression phase ended")
