@@ -3,7 +3,7 @@ from typing import Any
 
 import mlflow
 import mlflow.environment_variables
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
@@ -174,8 +174,9 @@ def load_mlflow_settings() -> MLFlowSettings:
 def setup_mlflow(*, logger: Logger) -> None:
     """Function to set up the mlflow settings"""
     logger.info("Setting up MLFlow service communication")
-    settings = load_mlflow_settings()
     try:
+        settings = load_mlflow_settings()
+
         mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
             settings.MLFLOW_HTTP_REQUEST_TIMEOUT
         )
@@ -191,6 +192,9 @@ def setup_mlflow(*, logger: Logger) -> None:
 
         mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
+    except ValidationError as e:
+        logger.error(e)
+        exit(1)
     except mlflow.exceptions.MlflowException as e:
         logger.error(e.message)
         exit(1)
