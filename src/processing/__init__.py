@@ -66,6 +66,8 @@ def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
     """Upload from local file the dataset."""
     try:
         df = pd.read_csv(f"{filename}")
+        logger.debug("Uploaded dataframe:")
+        logger.debug(df)
     except FileNotFoundError:
         logger.error("File %s not found", filename)
         exit(1)
@@ -101,6 +103,8 @@ def load_dataset_from_kafka(
     consumer.seek(tp, offset)
     l_data = [message.value for message in consumer]
     df = pd.DataFrame(l_data)
+    logger.debug("Uploaded dataframe:")
+    logger.debug(df)
     return df
 
 
@@ -108,6 +112,7 @@ def load_dataset(
     *, settings: TrainingSettings | InferenceSettings, logger: Logger
 ) -> pd.DataFrame:
     """Load the dataset from a local one or from kafka."""
+    logger.info("Upload training data")
     if settings.LOCAL_MODE:
         if settings.LOCAL_DATASET is None:
             logger.error("LOCAL_DATASET environment variable has not been set.")

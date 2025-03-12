@@ -458,8 +458,13 @@ def run(logger: Logger) -> None:
     settings = load_training_settings(logger=logger)
     setup_mlflow(logger=logger)
 
-    # Load the dataset and do preprocessing
+    # Load the dataset
     df = load_dataset(settings=settings, logger=logger)
+    if df.empty:
+        logger.info("Empty DataFrame")
+        return
+
+    # Pre-process data
     df = preprocessing(
         df=df,
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
