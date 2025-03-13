@@ -1,12 +1,10 @@
-import json
 from logging import Logger
 
 import numpy as np
 import pandas as pd
-from kafka import KafkaConsumer, TopicPartition
-from kafka.errors import NoBrokersAvailable
+from kafka import KafkaConsumer
 
-from settings import InferenceSettings, TrainingSettings
+from settings import InferenceSettings, TrainingSettings, create_kafka_consumer
 
 DF_CPU_DIFF = "cpu_diff"
 DF_RAM_DIFF = "ram_diff"
@@ -51,6 +49,7 @@ MSG_DEP_TOT_FAILURES = "n_failures"
 MSG_PROVIDER_NAME = "provider_name"
 MSG_REGION_NAME = "region_name"
 MSG_TIMESTAMP = "timestamp"
+MSG_INSTANCES_WITH_EXACT_FLAVORS = "exact_flavors"
 
 STATUS_CREATE_COMPLETED = "CREATE_COMPLETED"
 STATUS_CREATE_FAILED = "CREATE_FAILED"
@@ -74,33 +73,8 @@ def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
     return df
 
 
-def load_dataset_from_kafka(
-    kafka_server_url: str,
-    topic: str,
-    logger: Logger,
-    *,
-    partition: int = 0,
-    offset: int = 0,
-):
+def load_dataset_from_kafka(*, consumer: KafkaConsumer, logger: Logger):
     """Load from kafka the dataset."""
-    try:
-        consumer = KafkaConsumer(
-            # topic,
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset="earliest",
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # deserializza il JSON
-            consumer_timeout_ms=500,
-        )
-    except NoBrokersAvailable:
-        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
-        exit(1)
-
-    tp = TopicPartition(topic, partition)
-    consumer.assign([tp])
-    consumer.seek(tp, offset)
     l_data = [message.value for message in consumer]
     df = pd.DataFrame(l_data)
     logger.debug("Uploaded dataframe:")
@@ -118,13 +92,16 @@ def load_dataset(
             logger.error("LOCAL_DATASET environment variable has not been set.")
             exit(1)
         return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
-    return load_dataset_from_kafka(
+    consumer = create_kafka_consumer(
         kafka_server_url=str(settings.KAFKA_HOSTNAME),
         topic=settings.KAFKA_TRAINING_TOPIC,
         partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
         offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
         logger=logger,
     )
+    df = load_dataset_from_kafka(consumer=consumer, logger=logger)
+    consumer.close()
+    return df
 
 
 def preprocessing(
