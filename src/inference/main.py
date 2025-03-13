@@ -143,9 +143,14 @@ def regression_predict(
         y_pred_new = sklearn_model.predict(x_new)
         expected_time = float(y_pred_new[0])
         # Convert this value into a value between (0,1) range.
-        regression_value = 1 - (expected_time - min_regression_time) / (
-            max_regression_time - min_regression_time
-        )
+        # If expected_time < min_regression_time this value is a very good value.
+        if max_regression_time > 0:
+            regression_value = 1 - (expected_time - min_regression_time) / (
+                max_regression_time - min_regression_time
+            )
+        else:
+            regression_value = 1
+
         logger.debug("Predicted time for '%s': %.2f", provider, expected_time)
         logger.debug("Predicted goodness for '%s': %.2f", provider, expected_time)
         regression_values[provider] = regression_value

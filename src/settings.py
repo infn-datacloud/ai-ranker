@@ -172,7 +172,7 @@ class InferenceSettings(CommonSettings):
         default="latest", description="Version of classification model"
     )
     CLASSIFICATION_WEIGHT: float = Field(
-        default=0.75, description="Classification weight"
+        default=0.75, gt=0.0, lt=1.0, description="Classification weight"
     )
 
     REGRESSION_MODEL_NAME: str = Field(
@@ -182,10 +182,10 @@ class InferenceSettings(CommonSettings):
         default="latest", description="Version of regression model"
     )
     REGRESSION_MIN_TIME: float = Field(
-        default=0, description="Minimum regression time (s)"
+        default=0.0, ge=0.0, description="Minimum regression time (s)"
     )
     REGRESSION_MAX_TIME: float = Field(
-        default=5000, description="Maximim regression time (s)"
+        default=5000.0, gt=0.0, description="Maximim regression time (s)"
     )
 
     LOCAL_IN_MESSAGES: str | None = Field(
@@ -221,6 +221,14 @@ class InferenceSettings(CommonSettings):
     KAFKA_RANKED_PROVIDERS_TOPIC_OFFSET: int = Field(
         default=0, description="Inference topic read offset."
     )
+
+    @field_validator("REGRESSION_MAX_TIME")
+    @classmethod
+    def greater_then_min(cls, v: float, values: dict) -> float:
+        assert v > values["REGRESSION_MIN_TIME"], (
+            "Max regression time must be greater than min regression time"
+        )
+        return v
 
 
 def load_training_settings(logger: Logger) -> TrainingSettings:
