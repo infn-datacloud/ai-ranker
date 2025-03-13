@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 from kafka import KafkaConsumer
 
-from settings import InferenceSettings, TrainingSettings, create_kafka_consumer
+from settings import InferenceSettings, TrainingSettings
+from utils.kafka import create_kafka_consumer
 
 DF_CPU_DIFF = "cpu_diff"
 DF_RAM_DIFF = "ram_diff"

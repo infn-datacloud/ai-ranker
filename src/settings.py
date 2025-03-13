@@ -1,11 +1,7 @@
-import json
 from logging import Logger
 from typing import Any
 
-import mlflow
 import mlflow.environment_variables
-from kafka import KafkaConsumer, KafkaProducer, TopicPartition
-from kafka.errors import NoBrokersAvailable
 from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
@@ -121,7 +117,7 @@ class TrainingSettings(CommonSettings):
         cls, value: dict[str, dict]
     ) -> dict[str, ClassifierMixin]:
         """Verify the classification models"""
-        return validate_models(value, "classifier", ClassifierMixin)
+        return cls.__validate_models(value, "classifier", ClassifierMixin)
 
     @field_validator("REGRESSION_MODELS", mode="before")
     @classmethod
@@ -129,7 +125,41 @@ class TrainingSettings(CommonSettings):
         cls, value: dict[str, dict]
     ) -> dict[str, RegressorMixin]:
         """Verify the regression models"""
-        return validate_models(value, "regressor", RegressorMixin)
+        return cls.__validate_models(value, "regressor", RegressorMixin)
+
+    @classmethod
+    def __validate_models(
+        cls, value: dict[str, dict], model_type: str, model_class: type
+    ) -> dict[str, Any]:
+        """Function to validate classifiers and regressors
+
+        Args:
+            value (dict): Dictionary with models and parameters
+            model_type (str): Model type ("classifier" or "regressor").
+            model_class (type): Class type (ClassifierMixin o RegressorMixin).
+
+        Returns:
+            dict: dictionary where values are the model objects
+        """
+        models_dict = {}
+        estimators = dict(all_estimators(type_filter=model_type))
+
+        for model_name, model_params in value.items():
+            # Get the class of the model
+            model_class = estimators.get(model_name, None)
+
+            if model_class is None:
+                raise ValueError(f"Model {model_name} not found")
+
+            # Verify that the model belongs to the correct class
+            if not issubclass(model_class, model_class):
+                raise TypeError(f"The model {model_name} is not a {model_type} model")
+
+            # Create the model object from the parameters
+            model = model_class(**model_params)
+            models_dict[model_name] = model
+
+        return models_dict
 
 
 class InferenceSettings(CommonSettings):
@@ -218,129 +248,3 @@ def load_mlflow_settings(logger: Logger) -> MLFlowSettings:
     except (ValidationError, SettingsError) as e:
         logger.error(e)
         exit(1)
-
-
-def setup_mlflow(*, logger: Logger) -> None:
-    """Function to set up the mlflow settings"""
-    logger.info("Setting up MLFlow service communication")
-    settings = load_mlflow_settings(logger=logger)
-    try:
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
-            settings.MLFLOW_HTTP_REQUEST_TIMEOUT
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_MAX_RETRIES.set(
-            settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER
-        )
-
-        mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
-        mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-    except mlflow.exceptions.MlflowException as e:
-        logger.error(e.message)
-        exit(1)
-
-
-def create_kafka_consumer(
-    *,
-    kafka_server_url: str,
-    topic: str,
-    logger: Logger,
-    partition: int = 0,
-    offset: int = 0,
-) -> KafkaConsumer:
-    try:
-        consumer = KafkaConsumer(
-            # topic,
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset="earliest",
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # deserializza il JSON
-            consumer_timeout_ms=500,
-        )
-    except NoBrokersAvailable:
-        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
-        exit(1)
-
-    # TODO: Manage automatic partitioning
-    tp = TopicPartition(topic, partition)
-    consumer.assign([tp])
-    consumer.seek(tp, offset)
-    if consumer.bootstrap_connected():
-        logger.info("Subscribed to topics: %s", consumer.subscription())
-    # TODO: Manage disconnection and reconnections
-    # attempt = 0
-    # while True:
-    #     if not consumer.bootstrap_connected():
-    #         if attempt < settings.KAFKA_RECONNECT_MAX_RETRIES:
-    #             logger.warning(
-    #                 "Can't connect to topic '%s' on server '%s'. Waiting for %ss",
-    #                 settings.KAFKA_TRAINING_TOPIC,
-    #                 settings.KAFKA_HOSTNAME,
-    #                 settings.KAFKA_RECONNECT_PERIOD,
-    #             )
-    #             attempt += 1
-    #         else:
-    #             logger.error(
-    #                 "connect to topic '%s' on server '%s'. Max attempt reached (%s)",
-    #                 settings.KAFKA_TRAINING_TOPIC,
-    #                 settings.KAFKA_HOSTNAME,
-    #                 settings.KAFKA_RECONNECT_MAX_RETRIES,
-    #             )
-    #         exit(1)
-    #     else:
-    #         attempt = 0
-    return consumer
-
-
-def create_kafka_producer(*, kafka_server_url: str, logger: Logger) -> KafkaProducer:
-    try:
-        producer = KafkaProducer(
-            bootstrap_servers=kafka_server_url,
-            client_id="inference",
-            value_serializer=lambda x: json.dumps(x).encode("utf-8"),
-        )
-    except NoBrokersAvailable:
-        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
-        exit(1)
-    return producer
-
-
-def validate_models(
-    value: dict[str, dict], model_type: str, model_class: type
-) -> dict[str, Any]:
-    """Function to validate classifiers and regressors
-
-    Args:
-        value (dict): Dictionary with models and parameters
-        model_type (str): Model type ("classifier" or "regressor").
-        model_class (type): Class type (ClassifierMixin o RegressorMixin).
-
-    Returns:
-        dict: dictionary where values are the model objects
-    """
-    models_dict = {}
-    estimators = dict(all_estimators(type_filter=model_type))
-
-    for model_name, model_params in value.items():
-        # Get the class of the model
-        model_class = estimators.get(model_name, None)
-
-        if model_class is None:
-            raise ValueError(f"Model {model_name} not found")
-
-        # Verify that the model belongs to the correct class
-        if not issubclass(model_class, model_class):
-            raise TypeError(f"The model {model_name} is not a {model_type} model")
-
-        # Create the model object from the parameters
-        model = model_class(**model_params)
-        models_dict[model_name] = model
-
-    return models_dict

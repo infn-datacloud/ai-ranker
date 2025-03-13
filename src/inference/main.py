@@ -1,16 +1,11 @@
-import base64
 import json
-import pickle
 import time
 from logging import Logger
 from typing import Any
 
-import mlflow
-import mlflow.sklearn
 import pandas as pd
 from mlflow import MlflowClient
-from mlflow.pyfunc import PyFuncModel, load_model
-from sklearn.base import BaseEstimator
+from sklearn.preprocessing import RobustScaler
 
 from processing import (
     DF_AVG_FAIL_TIME,
@@ -48,134 +43,19 @@ from processing import (
     load_dataset,
     preprocessing,
 )
-from settings import (
-    InferenceSettings,
-    create_kafka_consumer,
-    create_kafka_producer,
-    load_inference_settings,
-    setup_mlflow,
-)
+from settings import InferenceSettings, load_inference_settings
+from utils.kafka import create_kafka_consumer, create_kafka_producer
+from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
 
 CLASSIFICATION_SUCCESS_IDX = 0
-# Default value for unexpected responses
-DEFAULT_PROBABILITY = 0.1
 K_RES_EXACT = "resource_exactness"
 K_CLASS = "classification"
 K_REGR = "regression"
-EXAMPLE = [
-    json.dumps(
-        {
-            "msg_version": "1.0.0",
-            "providers": [
-                {
-                    "exact_flavors": 1.0,
-                    "floating_ips_quota": 100.0,
-                    "floating_ips_requ": 1.0,
-                    "floating_ips_usage": 72.0,
-                    "gpus_requ": 0.0,
-                    "overbooking_ram": 1.2,
-                    "overbooking_cpu": 4.0,
-                    "n_instances_quota": 500.0,
-                    "n_instances_requ": 2.0,
-                    "n_instances_usage": 102.0,
-                    "n_volumes_quota": 500.0,
-                    "n_volumes_requ": 0.0,
-                    "n_volumes_usage": 42.0,
-                    "provider_name": "CLOUD-INFN-CATANIA",
-                    "ram_gb_quota": 8000.0,
-                    "ram_gb_requ": 8.0,
-                    "ram_gb_usage": 590.0,
-                    "region_name": "INFN-CT",
-                    "storage_gb_quota": 10000.0,
-                    "storage_gb_requ": 0.0,
-                    "storage_gb_usage": 2375.0,
-                    "test_failure_perc_1d": 0.0,
-                    "test_failure_perc_30d": 0.009,
-                    "test_failure_perc_7d": 0.012,
-                    "vcpus_quota": 1000.0,
-                    "vcpus_requ": 4.0,
-                    "vcpus_usage": 295.0,
-                },
-                {
-                    "exact_flavors": 0.0,
-                    "floating_ips_quota": 100.0,
-                    "floating_ips_requ": 1.0,
-                    "floating_ips_usage": 72.0,
-                    "gpus_requ": 0.0,
-                    "overbooking_ram": 1.2,
-                    "overbooking_cpu": 4.0,
-                    "n_instances_quota": 500.0,
-                    "n_instances_requ": 2.0,
-                    "n_instances_usage": 102.0,
-                    "n_volumes_quota": 500.0,
-                    "n_volumes_requ": 0.0,
-                    "n_volumes_usage": 42.0,
-                    "provider_name": "CLOUD-VENETO",
-                    "ram_gb_quota": 8000.0,
-                    "ram_gb_requ": 8.0,
-                    "ram_gb_usage": 590.0,
-                    "region_name": "regionOne",
-                    "storage_gb_quota": 10000.0,
-                    "storage_gb_requ": 0.0,
-                    "storage_gb_usage": 2375.0,
-                    "test_failure_perc_1d": 0.0,
-                    "test_failure_perc_30d": 0.009,
-                    "test_failure_perc_7d": 0.012,
-                    "vcpus_quota": 1000.0,
-                    "vcpus_requ": 4.0,
-                    "vcpus_usage": 295.0,
-                },
-            ],
-            "template_name": "Cluster Kubernetes",
-            "timestamp": "2025-02-03 15:58:44.068000",
-            "user_group": "admins/catchall",
-            "uuid": "11efe247-bea1-933a-8c8c-0242e34b7d6d",
-        }
-    )
-]
 
 
-def get_model_uri(
-    client: MlflowClient, *, model_name: str, model_version: str | int
-) -> str:
-    """Get target or latest model version from MLFlow."""
-    versions = client.search_model_versions(f"name='{model_name}'")
-    if len(versions) == 0:
-        raise ValueError(f"Model '{model_name}' not found")
-    if len(versions) == 1:
-        version = versions[0]
-    elif model_version == "latest":
-        version = max(versions, key=lambda x: int(x.version))
-    else:
-        version = next(
-            filter(lambda x: int(x.version) == model_version, versions), None
-        )
-    if version is None:
-        raise ValueError(f"Version {model_version} for model '{model_name}' not found")
-    return f"models:/{version.name}/{version.version}"
-
-
-def get_model(*, model_uri: str) -> tuple[PyFuncModel, BaseEstimator]:
-    """Get the model type and load it with the proper function"""
-    model = load_model(model_uri)
-    model_type = model.metadata.flavors.keys()
-    if model.loader_module == "mlflow.sklearn":
-        try:
-            return model, mlflow.sklearn.load_model(model_uri)
-        except Exception as e:
-            raise ValueError(f"Model not found at given uri '{model_uri}'") from e
-    raise ValueError(f"Model {model_type} not in the mlflow.sklearn library")
-
-
-def get_scaler(*, model_uri: str, scaler_file: str) -> Any:
-    """Return model's scaler"""
-    scaler_uri = f"{model_uri}/{scaler_file}"
-    scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
-    scaler_bytes = base64.b64decode(scaler_dict["scaler"])
-    return pickle.loads(scaler_bytes)
-
-
-def create_inference_df(*, data: dict, model: Any, scaler: Any | None) -> pd.DataFrame:
+def create_inference_input(
+    *, data: dict, model: Any, scaler: RobustScaler | None
+) -> pd.DataFrame:
     """From received dict create the dataframe to send to inference.
 
     Filter features.
@@ -217,7 +97,7 @@ def classification_predict(
     # Calculate success probability for each provider
     classification_values = {}
     for provider, data in input_data.items():
-        x_new = create_inference_df(data=data, model=sklearn_model, scaler=scaler)
+        x_new = create_inference_input(data=data, model=sklearn_model, scaler=scaler)
         logger.info("Predict success probability for '%s'", provider)
         y_pred_new = sklearn_model.predict_proba(x_new)
         success_prob = float(y_pred_new[0][CLASSIFICATION_SUCCESS_IDX])
@@ -258,7 +138,7 @@ def regression_predict(
     # Calculate expected time for each provider
     regression_values = {}
     for provider, data in input_data.items():
-        x_new = create_inference_df(data=data, model=sklearn_model, scaler=scaler)
+        x_new = create_inference_input(data=data, model=sklearn_model, scaler=scaler)
         logger.info("Predict time for '%s'", provider)
         y_pred_new = sklearn_model.predict(x_new)
         expected_time = float(y_pred_new[0])
@@ -272,13 +152,14 @@ def regression_predict(
     return regression_values
 
 
-def process_inference(
+def predict(
     *,
     input_inference: dict,
     mlflow_client: MlflowClient,
     settings: InferenceSettings,
     logger: Logger,
-) -> dict:
+) -> tuple[dict, dict]:
+    """Predict classification and regression on all input data"""
     start_time = time.time()
 
     # Send requests to classification and regression endpoints
@@ -300,10 +181,35 @@ def process_inference(
         mlflow_client=mlflow_client,
         logger=logger,
     )
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.debug("Inference Time: %.2f seconds", elapsed_time)
+
     assert len(classification_response) == len(regression_response), (
         "Responses length mismatch."
     )
+    return classification_response, regression_response
 
+
+def sort_key_with_exact_res(item: dict) -> tuple[float, float]:
+    """Sort results by resource exactness and then success probability"""
+    return item[1][K_RES_EXACT], item[1][K_CLASS] + item[1][K_REGR]
+
+
+def sort_key(item: dict) -> float:
+    """Sort results by success probability"""
+    return item[1][K_CLASS] + item[1][K_REGR]
+
+
+def merge_and_sort_results(
+    *,
+    input_inference: dict,
+    classification_response: dict,
+    regression_response: dict,
+    settings: InferenceSettings,
+    logger: Logger,
+):
+    """Merge classification and regression results to sort providers."""
     results = {}
     for provider in input_inference.keys():
         results[provider] = {
@@ -327,21 +233,11 @@ def process_inference(
         )
 
     if settings.EXACT_RESOURCES_PRECEDENCE:
-        # Sort results by resource exactness and then success probability
-
-        def sort_key(item):
-            return item[1][K_RES_EXACT], item[1][K_CLASS] + item[1][K_REGR]
+        sort_func = sort_key_with_exact_res
     else:
-
-        def sort_key(item):
-            return item[1][K_CLASS] + item[1][K_REGR]
-
-    sorted_results = dict(sorted(results.items(), key=sort_key, reverse=True))
+        sort_func = sort_key
+    sorted_results = dict(sorted(results.items(), key=sort_func, reverse=True))
     logger.debug("Sorted results: %s", results)
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    logger.debug("Inference Time: %.2f seconds", elapsed_time)
     return sorted_results
 
 
@@ -426,7 +322,10 @@ def create_message(
 
 def load_local_messages(*, filename: str | None, logger: Logger) -> list:
     """Load local messages from a text file."""
-    return EXAMPLE
+    with open(filename) as file:
+        messages = json.load(file)
+    logger.debug("Loaded messages: %s", messages)
+    return messages
 
 
 def send_message(message: dict, settings: InferenceSettings, logger: Logger):
@@ -452,7 +351,7 @@ def send_message(message: dict, settings: InferenceSettings, logger: Logger):
         )
 
 
-def run(logger: Logger):
+def run(logger: Logger) -> None:
     """Function to load the dataset, do preprocessing, load the
     model from MLFlow and infer the best provider."""
     # Load the settings and setup MLFlow and create the MLflow client
@@ -482,7 +381,10 @@ def run(logger: Logger):
         if not settings.LOCAL_MODE:
             # Decode bytes to a string
             message = message.value.decode("utf-8")
-        data = json.loads(message)
+            data = json.loads(message)
+        else:
+            data = message
+
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
             df = load_dataset(settings=settings, logger=logger)
@@ -497,9 +399,16 @@ def run(logger: Logger):
                 complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
                 logger=logger,
             )
-            sorted_results = process_inference(
+            classification_prediction, regression_prediction = predict(
                 input_inference=input_data,
                 mlflow_client=client,
+                settings=settings,
+                logger=logger,
+            )
+            sorted_results = merge_and_sort_results(
+                input_inference=input_data,
+                classification_response=classification_prediction,
+                regression_response=regression_prediction,
                 settings=settings,
                 logger=logger,
             )
@@ -507,7 +416,15 @@ def run(logger: Logger):
             logger.info("Only one provider. No inference needed")
             el = data["providers"][0]
             provider = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
-            sorted_results = {provider: 0.5}
+            sorted_results = {
+                provider: {
+                    K_CLASS: -1,
+                    K_REGR: -1,
+                    K_RES_EXACT: el[MSG_INSTANCES_WITH_EXACT_FLAVORS]
+                    / el[MSG_INSTANCE_REQ],
+                    **el,
+                }
+            }
 
         output_message = create_message(
             sorted_results=sorted_results,

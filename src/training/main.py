@@ -1,11 +1,6 @@
-import base64
 import pickle
 from logging import Logger
-from tempfile import NamedTemporaryFile
 
-import mlflow
-import mlflow.environment_variables
-import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
@@ -26,8 +21,9 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
 from processing import DF_TIMESTAMP, load_dataset, preprocessing
-from settings import TrainingSettings, load_training_settings, setup_mlflow
+from settings import TrainingSettings, load_training_settings
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
+from utils.mlflow import log_on_mlflow, setup_mlflow
 
 STATUS_COL = -2
 DEP_TIME_COL = -1
@@ -329,51 +325,6 @@ def kfold_cross_validation(
         scaler_file=scaler_file,
         logger=logger,
     )
-
-
-def log_on_mlflow(
-    model_params: dict,
-    model_name: str,
-    model: BaseEstimator,
-    metrics: dict,
-    metadata: MetaData,
-    feature_importance_df: pd.DataFrame,
-    scaling_enable,
-    scaler_file: str,
-    scaler_bytes: bytes,
-):
-    """Function to log the model on MLFlow"""
-    # Logging on MLflow
-    with mlflow.start_run():
-        # Log the parameters
-        mlflow.log_params(model_params)
-
-        # Log the metrics
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
-
-        # Log the sklearn model and register
-        mlflow.sklearn.log_model(
-            signature=False,
-            sk_model=model,
-            artifact_path=model_name,
-            registered_model_name=model_name,
-            metadata=metadata.model_dump(),
-        )
-
-        # Add scaler file as model artifact if scaling is enabled
-        if scaling_enable:
-            scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
-            mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
-
-        for key, value in metadata.model_dump().items():
-            mlflow.set_tag(key, value)
-
-        with NamedTemporaryFile(
-            delete=True, prefix="feature_importance", suffix=".csv"
-        ) as temp_file:
-            feature_importance_df.to_csv(temp_file.name, index=False)
-            mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
 def split_and_clean_data(
