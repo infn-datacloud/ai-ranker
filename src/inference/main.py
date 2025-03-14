@@ -10,36 +10,15 @@ from sklearn.preprocessing import RobustScaler
 from processing import (
     DF_AVG_FAIL_TIME,
     DF_AVG_SUCCESS_TIME,
-    DF_COMPLEX,
-    DF_CPU_DIFF,
-    DF_DISK_DIFF,
     DF_FAIL_PERC,
-    DF_GPU,
-    DF_INSTANCE_DIFF,
     DF_PROVIDER,
-    DF_PUB_IPS_DIFF,
-    DF_RAM_DIFF,
     DF_TIMESTAMP,
-    MSG_CPU_QUOTA,
-    MSG_CPU_REQ,
-    MSG_CPU_USAGE,
-    MSG_DISK_QUOTA,
-    MSG_DISK_REQ,
-    MSG_DISK_USAGE,
-    MSG_GPU_REQ,
-    MSG_INSTANCE_QUOTA,
     MSG_INSTANCE_REQ,
-    MSG_INSTANCE_USAGE,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
     MSG_PROVIDER_NAME,
-    MSG_PUB_IPS_QUOTA,
-    MSG_PUB_IPS_REQ,
-    MSG_PUB_IPS_USAGE,
-    MSG_RAM_QUOTA,
-    MSG_RAM_REQ,
-    MSG_RAM_USAGE,
     MSG_REGION_NAME,
     MSG_TEMPLATE_NAME,
+    calculate_derived_properties,
     load_training_data,
     preprocessing,
 )
@@ -271,20 +250,18 @@ def pre_process_message(
     provider situation inferred from the stored data.
     """
     data = {}
-    template_name = message[MSG_TEMPLATE_NAME]
-    complexity = 1 if template_name in complex_templates else 0
-    for el in message["providers"]:
+    df_msg = pd.DataFrame(message["providers"])
+    df_msg = calculate_derived_properties(df=df, complex_templates=complex_templates)
+    for _, row in df_msg.iterrows():
         # Filter historical values related to the target provider and region
-        provider_region = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
-
-        # Retrieve latest details for the combination: provider-region-template
+        # and retrieve latest details about success and failure percentage.
         avg_success_time = 0.0
         avg_failure_time = 0.0
         failure_percentage = 0.0
         if not df.empty:
             df = df[
-                (df[MSG_TEMPLATE_NAME] == template_name)
-                & (df[DF_PROVIDER] == provider_region)
+                (df[MSG_TEMPLATE_NAME] == row[MSG_TEMPLATE_NAME])
+                & (df[DF_PROVIDER] == row[DF_PROVIDER])
             ]
         if not df.empty:
             idx_latest = df[DF_TIMESTAMP].idxmax()
@@ -292,32 +269,23 @@ def pre_process_message(
             avg_failure_time = float(df.loc[idx_latest, DF_AVG_FAIL_TIME])
             failure_percentage = float(df.loc[idx_latest, DF_FAIL_PERC])
 
-        calculated_values = {
-            DF_CPU_DIFF: (el[MSG_CPU_QUOTA] - el[MSG_CPU_REQ]) - el[MSG_CPU_USAGE],
-            DF_RAM_DIFF: (el[MSG_RAM_QUOTA] - el[MSG_RAM_REQ]) - el[MSG_RAM_USAGE],
-            DF_DISK_DIFF: (el[MSG_DISK_QUOTA] - el[MSG_DISK_REQ]) - el[MSG_DISK_USAGE],
-            DF_INSTANCE_DIFF: (el[MSG_INSTANCE_QUOTA] - el[MSG_INSTANCE_REQ])
-            - el[MSG_INSTANCE_USAGE],
-            DF_PUB_IPS_DIFF: (el[MSG_PUB_IPS_QUOTA] - el[MSG_PUB_IPS_REQ])
-            - el[MSG_PUB_IPS_USAGE],
-            DF_GPU: float(bool(el[MSG_GPU_REQ])),
-            DF_COMPLEX: complexity,
-            "test_failure_perc_30d": el["test_failure_perc_30d"],
-            "test_failure_perc_7d": el["test_failure_perc_7d"],
-            "test_failure_perc_1d": el["test_failure_perc_1d"],
-            "overbooking_ram": el["overbooking_ram"],
-            "overbooking_cpu": el["overbooking_cpu"],
+        data[row[DF_PROVIDER]] = {
+            **row.to_dict(),
+            "test_failure_perc_30d": row["test_failure_perc_30d"],
+            "test_failure_perc_7d": row["test_failure_perc_7d"],
+            "test_failure_perc_1d": row["test_failure_perc_1d"],
+            "overbooking_ram": row["overbooking_ram"],
+            "overbooking_cpu": row["overbooking_cpu"],
             DF_AVG_SUCCESS_TIME: avg_success_time,
             DF_AVG_FAIL_TIME: avg_failure_time,
             DF_FAIL_PERC: failure_percentage,
-            K_RES_EXACT: el[MSG_INSTANCES_WITH_EXACT_FLAVORS] / el[MSG_INSTANCE_REQ],
+            K_RES_EXACT: row[MSG_INSTANCES_WITH_EXACT_FLAVORS] / row[MSG_INSTANCE_REQ],
         }
-        data[provider_region] = calculated_values
         logger.debug(
             "The following data has been requested on provider '%s' on region '%s': %s",
-            el[MSG_PROVIDER_NAME],
-            el[MSG_REGION_NAME],
-            calculated_values,
+            row[MSG_PROVIDER_NAME],
+            row[MSG_REGION_NAME],
+            data[row[DF_PROVIDER]],
         )
 
     return data

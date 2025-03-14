@@ -103,6 +103,36 @@ def load_training_data(
     return df
 
 
+def calculate_derived_properties(
+    *, df: pd.DataFrame, complex_templates: list[str]
+) -> pd.DataFrame:
+    """From message inputs, calculate derived properties.
+
+    Concatenate provider and region name.
+    CPU diff: difference between Maximum, used and requested.
+    RAM diff: difference between Maximum, used and requested.
+    Disk diff: difference between Maximum, used and requested.
+    Instances diff: difference between Maximum, used and requested.
+    Volumes diff: difference between Maximum, used and requested.
+    Public IPs diff: difference between Maximum, used and requested.
+    Template complexity depends on the chosen template.
+    """
+    df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
+    df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
+    df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
+    df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
+    df[DF_INSTANCE_DIFF] = (df[MSG_INSTANCE_QUOTA] - df[MSG_INSTANCE_USAGE]) - df[
+        MSG_INSTANCE_REQ
+    ]
+    df[DF_VOL_DIFF] = (df[MSG_VOL_QUOTA] - df[MSG_VOL_USAGE]) - df[MSG_VOL_REQ]
+    df[DF_PUB_IPS_DIFF] = (df[MSG_PUB_IPS_QUOTA] - df[MSG_PUB_IPS_USAGE]) - df[
+        MSG_PUB_IPS_REQ
+    ]
+    df[DF_GPU] = df[MSG_GPU_REQ]
+    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(int)
+    return df
+
+
 def preprocessing(
     *,
     df: pd.DataFrame,
@@ -135,24 +165,6 @@ def preprocessing(
     # Remove them.
     df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
     df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
-    df.dropna(inplace=True)
-    if df.empty:
-        logger.warning("Dropping NaN and None generated an empty dataframe")
-        return df
-
-    df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
-    df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
-    df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
-    df[DF_INSTANCE_DIFF] = (df[MSG_INSTANCE_QUOTA] - df[MSG_INSTANCE_USAGE]) - df[
-        MSG_INSTANCE_REQ
-    ]
-    df[DF_VOL_DIFF] = (df[MSG_VOL_QUOTA] - df[MSG_VOL_USAGE]) - df[MSG_VOL_REQ]
-    df[DF_PUB_IPS_DIFF] = (df[MSG_PUB_IPS_QUOTA] - df[MSG_PUB_IPS_USAGE]) - df[
-        MSG_PUB_IPS_REQ
-    ]
-    df[DF_GPU] = df[MSG_GPU_REQ]
-    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(int)
-
     # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it
     # is the average failure time
     df[DF_DEP_TIME] = np.where(
@@ -164,7 +176,12 @@ def preprocessing(
             np.nan,
         ),
     )
-    df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
+    df.dropna(inplace=True)
+    if df.empty:
+        logger.warning("Dropping NaN and None generated an empty dataframe")
+        return df
+
+    df = calculate_derived_properties(df=df, complex_templates=complex_templates)
 
     # Calculate historical features.
     grouped = df.groupby([DF_PROVIDER, MSG_TEMPLATE_NAME])
