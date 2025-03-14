@@ -186,6 +186,8 @@ def train_model(
     model: BaseEstimator,
     scaling_enable: bool,
     scaler_file: str,
+    max_retries: int,
+    attempt_interval: int,
     logger: Logger,
 ) -> None:
     """Function to train a generic sklearn ML model"""
@@ -209,7 +211,9 @@ def train_model(
     # Train the model
     logger.info("Training model '%s' with params: %s", model_name, model_params)
     model.fit(x_train_scaled, y_train.values.ravel())
+    logger.info("Model successfully trained.")
 
+    logger.info("Computing metrics")
     # Get feature importance
     feature_importance_df = get_feature_importance(
         model, x_train.columns, x_train_scaled, logger
@@ -238,26 +242,22 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
+    logger.info("Metrics computed")
 
-    logger.info("Model successfully trained and metrics computed")
-    logger.info("Logging the model on MLFlow")
-    try:
-        # Log the model on MLFlow
-        log_on_mlflow(
-            model_params,
-            model_name,
-            model,
-            metrics,
-            metadata,
-            feature_importance_df,
-            scaling_enable,
-            scaler_file,
-            scaler_bytes,
-        )
-        logger.info("Model %s successfully logged on MLflow", model_name)
-    except Exception as e:
-        logger.error("Error in logging the model in MLFlow server: %s", e)
-        exit(1)
+    log_on_mlflow(
+        model_params,
+        model_name,
+        model,
+        metrics,
+        metadata,
+        feature_importance_df,
+        scaling_enable,
+        scaler_file,
+        scaler_bytes,
+        max_retries,
+        attempt_interval,
+        logger=logger,
+    )
 
 
 def kfold_cross_validation(
@@ -270,8 +270,7 @@ def kfold_cross_validation(
     models: dict[str, BaseEstimator],
     logger: Logger,
     n_splits: int = 5,
-    scaling_enable: bool,
-    scaler_file: str,
+    settings: TrainingSettings,
 ) -> None:
     """Function to perform K-Fold Cross Validation"""
     logger.info("Perform K-Fold Cross Validation")
@@ -287,7 +286,7 @@ def kfold_cross_validation(
 
     for model_name, model in models.items():
         # Scale x if scaling is enabled
-        if scaling_enable:
+        if settings.SCALING_ENABLE:
             scaler = RobustScaler()
             x_scaled = scaler.fit_transform(x)
         else:
@@ -321,8 +320,10 @@ def kfold_cross_validation(
         metadata=metadata,
         model_name=best_model_name,
         model=model,
-        scaling_enable=scaling_enable,
-        scaler_file=scaler_file,
+        scaling_enable=settings.SCALING_ENABLE,
+        scaler_file=settings.SCALER_FILE,
+        max_retries=settings.REGISTRY_CONN_MAX_RETRIES,
+        attempt_interval=settings.REGISTRY_CONN_ATTEMPT_INTERVAL,
         logger=logger,
     )
 
@@ -373,6 +374,8 @@ def training_phase(
             model=model,
             scaling_enable=settings.SCALING_ENABLE,
             scaler_file=settings.SCALER_FILE,
+            max_retries=settings.REGISTRY_CONN_MAX_RETRIES,
+            attempt_interval=settings.REGISTRY_CONN_ATTEMPT_INTERVAL,
             logger=logger,
         )
     else:
@@ -384,8 +387,7 @@ def training_phase(
             metadata=metadata,
             models=models,
             n_splits=settings.KFOLDS,
-            scaling_enable=settings.SCALING_ENABLE,
-            scaler_file=settings.SCALER_FILE,
+            settings=settings,
             logger=logger,
         )
 

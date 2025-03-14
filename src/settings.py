@@ -84,6 +84,16 @@ class CommonSettings(BaseSettings):
     SCALER_FILE: str = Field(
         default="scaler.pkl", description="Default file where store the scaler"
     )
+    REGISTRY_CONN_MAX_RETRIES: int = Field(
+        default=100,
+        ge=0,
+        description="Max number of retries when failing to contact the model registry",
+    )
+    REGISTRY_CONN_ATTEMPT_INTERVAL: float = Field(
+        default=60.0,
+        gt=0,
+        description="Seconds to wait before trying to contact again the model registry",
+    )
 
     class Config:
         env_file = ".env"  # Set variables from env files
