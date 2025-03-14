@@ -98,6 +98,7 @@ def load_dataset(
         topic=settings.KAFKA_TRAINING_TOPIC,
         partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
         offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+        consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
         logger=logger,
     )
     df = load_dataset_from_kafka(consumer=consumer, logger=logger)

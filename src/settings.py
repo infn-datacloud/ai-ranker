@@ -62,6 +62,11 @@ class CommonSettings(BaseSettings):
     KAFKA_TRAINING_TOPIC_OFFSET: int = Field(
         default=0, description="Training topic read offset."
     )
+    KAFKA_TRAINING_TOPIC_TIMEOUT: int = Field(
+        default=1000,
+        ge=0,
+        description="Number of milliseconds to wait for a new message during iteration",
+    )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
@@ -210,6 +215,11 @@ class InferenceSettings(CommonSettings):
     )
     KAFKA_INFERENCE_TOPIC_OFFSET: int = Field(
         default=0, description="Inference topic read offset."
+    )
+    KAFKA_INFERENCE_TOPIC_TIMEOUT: int = Field(
+        default=0,
+        ge=0,
+        description="Number of milliseconds to wait for a new message during iteration",
     )
 
     KAFKA_RANKED_PROVIDERS_TOPIC: str = Field(

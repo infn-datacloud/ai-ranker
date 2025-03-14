@@ -376,17 +376,16 @@ def run(logger: Logger) -> None:
             topic=settings.KAFKA_INFERENCE_TOPIC,
             partition=settings.KAFKA_INFERENCE_TOPIC_PARTITION,
             offset=settings.KAFKA_INFERENCE_TOPIC_OFFSET,
+            consumer_timeout_ms=settings.KAFKA_INFERENCE_TOPIC_TIMEOUT,
             logger=logger,
         )
 
     # Listen for new messages from the inference topic
     for message in consumer:
         logger.info("New message received")
-        logger.debug("Message: %s", message)
+        logger.debug("Message: %s", message.value)
         if not settings.LOCAL_MODE:
-            # Decode bytes to a string
-            message = message.value.decode("utf-8")
-            data = json.loads(message)
+            data = message.value
         else:
             data = message
 
