@@ -48,6 +48,7 @@ from utils.kafka import create_kafka_consumer, create_kafka_producer
 from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
 
 CLASSIFICATION_SUCCESS_IDX = 0
+NO_PREDICTED_VALUE = -1
 K_RES_EXACT = "resource_exactness"
 K_CLASS = "classification"
 K_REGR = "regression"
@@ -168,24 +169,35 @@ def predict(
     start_time = time.time()
 
     # Send requests to classification and regression endpoints
-    classification_response = classification_predict(
-        input_data=input_inference,
-        model_name=settings.CLASSIFICATION_MODEL_NAME,
-        model_version=settings.CLASSIFICATION_MODEL_VERSION,
-        scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
-        mlflow_client=mlflow_client,
-        logger=logger,
-    )
-    regression_response = regression_predict(
-        input_data=input_inference,
-        model_name=settings.REGRESSION_MODEL_NAME,
-        model_version=settings.REGRESSION_MODEL_VERSION,
-        scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
-        min_regression_time=settings.REGRESSION_MIN_TIME,
-        max_regression_time=settings.REGRESSION_MAX_TIME,
-        mlflow_client=mlflow_client,
-        logger=logger,
-    )
+    try:
+        classification_response = classification_predict(
+            input_data=input_inference,
+            model_name=settings.CLASSIFICATION_MODEL_NAME,
+            model_version=settings.CLASSIFICATION_MODEL_VERSION,
+            scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
+            mlflow_client=mlflow_client,
+            logger=logger,
+        )
+    except ValueError as e:
+        logger.error(e)
+        classification_response = {
+            k: NO_PREDICTED_VALUE for k in input_inference.keys()
+        }
+    try:
+        regression_response = regression_predict(
+            input_data=input_inference,
+            model_name=settings.REGRESSION_MODEL_NAME,
+            model_version=settings.REGRESSION_MODEL_VERSION,
+            scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
+            min_regression_time=settings.REGRESSION_MIN_TIME,
+            max_regression_time=settings.REGRESSION_MAX_TIME,
+            mlflow_client=mlflow_client,
+            logger=logger,
+        )
+    except ValueError as e:
+        logger.error(e)
+        regression_response = {k: NO_PREDICTED_VALUE for k in input_inference.keys()}
+
     end_time = time.time()
     elapsed_time = end_time - start_time
     logger.debug("Inference Time: %.2f seconds", elapsed_time)
@@ -327,7 +339,7 @@ def create_message(
     return message
 
 
-def load_local_messages(*, filename: str | None, logger: Logger) -> list:
+def load_local_messages(*, filename: str | None, logger: Logger) -> list[dict]:
     """Load local messages from a text file."""
     with open(filename) as file:
         messages = json.load(file)
@@ -335,12 +347,12 @@ def load_local_messages(*, filename: str | None, logger: Logger) -> list:
     return messages
 
 
-def send_message(message: dict, settings: InferenceSettings, logger: Logger):
+def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> None:
     """Send message to kafka or write it to file."""
     if settings.LOCAL_MODE:
         if settings.LOCAL_OUT_MESSAGES is None:
             logger.error("LOCAL_OUT_MESSAGES environment variable has not been set.")
-            exit(1)
+            return
         # 'a' mode appends without overwriting
         with open(settings.LOCAL_OUT_MESSAGES, "a") as file:
             file.write(json.dumps(message, indent=4))
@@ -385,11 +397,12 @@ def run(logger: Logger) -> None:
     # Listen for new messages from the inference topic
     for message in consumer:
         logger.info("New message received")
-        logger.debug("Message: %s", message.value)
         if not settings.LOCAL_MODE:
+            logger.debug("Message: %s", message)
             data = message.value
         else:
             data = message
+        logger.debug("Message data: %s", data)
 
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
@@ -424,8 +437,8 @@ def run(logger: Logger) -> None:
             provider = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
             sorted_results = {
                 provider: {
-                    K_CLASS: -1,
-                    K_REGR: -1,
+                    K_CLASS: NO_PREDICTED_VALUE,
+                    K_REGR: NO_PREDICTED_VALUE,
                     K_RES_EXACT: el[MSG_INSTANCES_WITH_EXACT_FLAVORS]
                     / el[MSG_INSTANCE_REQ],
                     **el,
