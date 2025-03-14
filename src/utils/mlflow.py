@@ -1,6 +1,5 @@
 import base64
 import pickle
-import time
 from logging import Logger
 from tempfile import NamedTemporaryFile
 
@@ -8,7 +7,6 @@ import mlflow
 import mlflow.environment_variables
 import mlflow.sklearn
 import pandas as pd
-from mlflow.exceptions import MlflowException
 from mlflow.pyfunc import PyFuncModel, load_model
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import RobustScaler
@@ -52,64 +50,39 @@ def log_on_mlflow(
     scaling_enable,
     scaler_file: str,
     scaler_bytes: bytes,
-    max_retries: int,
-    attempt_interval: float,
-    logger: Logger,
-) -> bool:
+):
     """Function to log the model on MLFlow"""
-    attempt = 0
-    success = False
-    logger.info("Logging the model on MLFlow")
-    while not success:
-        try:
-            with mlflow.start_run():
-                # Log the parameters
-                mlflow.log_params(model_params)
+    # Logging on MLflow
+    with mlflow.start_run():
+        # Log the parameters
+        mlflow.log_params(model_params)
 
-                # Log the metrics
-                for metric, value in metrics.items():
-                    mlflow.log_metric(metric, value)
+        # Log the metrics
+        for metric, value in metrics.items():
+            mlflow.log_metric(metric, value)
 
-                # Log the sklearn model and register
-                mlflow.sklearn.log_model(
-                    signature=False,
-                    sk_model=model,
-                    artifact_path=model_name,
-                    registered_model_name=model_name,
-                    metadata=metadata.model_dump(),
-                )
+        # Log the sklearn model and register
+        mlflow.sklearn.log_model(
+            signature=False,
+            sk_model=model,
+            artifact_path=model_name,
+            registered_model_name=model_name,
+            metadata=metadata.model_dump(),
+        )
 
-                # Add scaler file as model artifact if scaling is enabled
-                if scaling_enable:
-                    scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
-                    mlflow.log_dict(
-                        {"scaler": scaler_b64}, f"{model_name}/{scaler_file}"
-                    )
+        # Add scaler file as model artifact if scaling is enabled
+        if scaling_enable:
+            scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
+            mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
 
-                for key, value in metadata.model_dump().items():
-                    mlflow.set_tag(key, value)
+        for key, value in metadata.model_dump().items():
+            mlflow.set_tag(key, value)
 
-                with NamedTemporaryFile(
-                    delete=True, prefix="feature_importance", suffix=".csv"
-                ) as temp_file:
-                    feature_importance_df.to_csv(temp_file.name, index=False)
-                    mlflow.log_artifact(
-                        temp_file.name, artifact_path="feature_importance"
-                    )
-            logger.info("Model %s successfully logged on MLflow", model_name)
-            success = True
-        except MlflowException:
-            if attempt >= max_retries:
-                logger.error("Error in logging the model in MLFlow server")
-                exit(1)
-            attempt += 1
-            logger.warning(
-                "Can't contact MLFlow server (%d/%d). Retrying in %s seconds",
-                attempt,
-                max_retries,
-                attempt_interval,
-            )
-            time.sleep(attempt_interval)
+        with NamedTemporaryFile(
+            delete=True, prefix="feature_importance", suffix=".csv"
+        ) as temp_file:
+            feature_importance_df.to_csv(temp_file.name, index=False)
+            mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
 
 
 def get_model_uri(
