@@ -78,13 +78,6 @@ class CommonSettings(BaseSettings):
         default_factory=list, decription="List of complex template"
     )
 
-    SCALING_ENABLE: bool = Field(
-        default=False, description="Perform the scaling of X features"
-    )
-    SCALER_FILE: str = Field(
-        default="scaler.pkl", description="Default file where store the scaler"
-    )
-
     class Config:
         env_file = ".env"  # Set variables from env files
         env_file_encoding = "utf-8"
@@ -124,6 +117,13 @@ class TrainingSettings(CommonSettings):
     )
     Y_REGRESSION_FEATURES: list = Field(
         description="List of features to use as Y for regression"
+    )
+
+    SCALING_ENABLE: bool = Field(
+        default=False, description="Perform the scaling of X features"
+    )
+    SCALER_FILE: str = Field(
+        default="scaler.pkl", description="Default file where store the scaler"
     )
 
     @field_validator("CLASSIFICATION_MODELS", mode="before")

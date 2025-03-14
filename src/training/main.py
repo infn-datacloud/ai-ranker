@@ -402,6 +402,9 @@ def run(logger: Logger) -> None:
     except NoBrokersAvailable:
         logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
         exit(1)
+    except AssertionError as e:
+        logger.error(e)
+        exit(1)
 
     # Pre-process data
     df = preprocessing(
@@ -435,6 +438,7 @@ def run(logger: Logger) -> None:
         features=settings.X_FEATURES + settings.Y_CLASSIFICATION_FEATURES,
         remove_outliers=settings.REMOVE_OUTLIERS,
         scaling=settings.SCALING_ENABLE,
+        scaler_file=settings.SCALER_FILE,
     )
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
         x=df[settings.X_FEATURES],

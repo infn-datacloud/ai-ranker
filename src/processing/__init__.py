@@ -43,6 +43,7 @@ MSG_PUB_IPS_USAGE = "floating_ips_usage"
 MSG_PUB_IPS_REQ = "floating_ips_requ"
 MSG_GPU_REQ = "gpus_requ"
 MSG_STATUS = "status"
+MSG_STATUS_REASON = "status_reason"
 MSG_TEMPLATE_NAME = "template_name"
 MSG_DEP_COMPLETION_TIME = "completed_time"
 MSG_DEP_FAILED_TIME = "tot_failed_time"
@@ -51,6 +52,54 @@ MSG_PROVIDER_NAME = "provider_name"
 MSG_REGION_NAME = "region_name"
 MSG_TIMESTAMP = "timestamp"
 MSG_INSTANCES_WITH_EXACT_FLAVORS = "exact_flavors"
+MSG_DEP_UUID = "uuid"
+MSG_TEST_FAIL_PERC_30D = "test_failure_perc_30d"
+MSG_TEST_FAIL_PERC_7D = "test_failure_perc_7d"
+MSG_TEST_FAIL_PERC_1D = "test_failure_perc_1d"
+MSG_OVERBOOK_RAM = "overbooking_ram"
+MSG_OVERBOOK_CORES = "overbooking_cores"
+MSG_IMAGES = "images"
+MSG_USER_GROUP = "user_group"
+
+MSG_VALID_KEYS = [
+    MSG_CPU_QUOTA,
+    MSG_CPU_USAGE,
+    MSG_CPU_REQ,
+    MSG_RAM_QUOTA,
+    MSG_RAM_USAGE,
+    MSG_RAM_REQ,
+    MSG_DISK_QUOTA,
+    MSG_DISK_USAGE,
+    MSG_DISK_REQ,
+    MSG_INSTANCE_QUOTA,
+    MSG_INSTANCE_USAGE,
+    MSG_INSTANCE_REQ,
+    MSG_VOL_QUOTA,
+    MSG_VOL_USAGE,
+    MSG_VOL_REQ,
+    MSG_PUB_IPS_QUOTA,
+    MSG_PUB_IPS_USAGE,
+    MSG_PUB_IPS_REQ,
+    MSG_GPU_REQ,
+    MSG_STATUS,
+    MSG_STATUS_REASON,
+    MSG_TEMPLATE_NAME,
+    MSG_DEP_COMPLETION_TIME,
+    MSG_DEP_FAILED_TIME,
+    MSG_DEP_TOT_FAILURES,
+    MSG_PROVIDER_NAME,
+    MSG_REGION_NAME,
+    MSG_TIMESTAMP,
+    MSG_INSTANCES_WITH_EXACT_FLAVORS,
+    MSG_DEP_UUID,
+    MSG_TEST_FAIL_PERC_30D,
+    MSG_TEST_FAIL_PERC_7D,
+    MSG_TEST_FAIL_PERC_1D,
+    MSG_OVERBOOK_RAM,
+    MSG_OVERBOOK_CORES,
+    MSG_IMAGES,
+    MSG_USER_GROUP,
+]
 
 STATUS_CREATE_COMPLETED = "CREATE_COMPLETED"
 STATUS_CREATE_FAILED = "CREATE_FAILED"
@@ -65,6 +114,8 @@ STATUS_MAP = {
 def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
     """Upload from a local CSV file the dataset."""
     df = pd.read_csv(f"{filename}")
+    invalid_keys = set(df.columns).difference(MSG_VALID_KEYS)
+    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
     logger.debug("Uploaded dataframe:")
     logger.debug(df)
     return df
@@ -76,6 +127,8 @@ def load_dataset_from_kafka_messages(
     """Read kafka messages and create a dataset from them."""
     l_data = [message.value for message in consumer]
     df = pd.DataFrame(l_data)
+    invalid_keys = set(df.columns).difference(MSG_VALID_KEYS)
+    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
     logger.debug("Uploaded dataframe:")
     logger.debug(df)
     return df
@@ -117,7 +170,7 @@ def calculate_derived_properties(
     Public IPs diff: difference between Maximum, used and requested.
     Template complexity depends on the chosen template.
     """
-    df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
+    df[DF_PROVIDER] = df[[MSG_PROVIDER_NAME, MSG_REGION_NAME]].agg("-".join, axis=1)
     df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
     df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
     df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]

@@ -13,11 +13,18 @@ from processing import (
     DF_FAIL_PERC,
     DF_PROVIDER,
     DF_TIMESTAMP,
+    MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
+    MSG_OVERBOOK_CORES,
+    MSG_OVERBOOK_RAM,
     MSG_PROVIDER_NAME,
     MSG_REGION_NAME,
     MSG_TEMPLATE_NAME,
+    MSG_TEST_FAIL_PERC_1D,
+    MSG_TEST_FAIL_PERC_7D,
+    MSG_TEST_FAIL_PERC_30D,
+    MSG_VALID_KEYS,
     calculate_derived_properties,
     load_training_data,
     preprocessing,
@@ -55,7 +62,6 @@ def classification_predict(
     input_data: dict,
     model_name: str,
     model_version: str,
-    scaler_file: str | None,
     mlflow_client: MlflowClient,
     logger: Logger,
 ):
@@ -70,9 +76,12 @@ def classification_predict(
     )
     mlflow_model, sklearn_model = get_model(model_uri=model_uri)
     scaler = None
-    if scaler_file:
+    if mlflow_model.metadata.metadata["scaling"]:
         logger.info("Load scaler from MLFlow.")
-        scaler = get_scaler(model_uri=model_uri, scaler_file=scaler_file)
+        scaler = get_scaler(
+            model_uri=model_uri,
+            scaler_file=mlflow_model.metadata.metadata["scaler_file"],
+        )
 
     # Calculate success probability for each provider
     classification_values = {}
@@ -94,7 +103,6 @@ def regression_predict(
     input_data: dict,
     model_name: str,
     model_version: str,
-    scaler_file: str | None,
     min_regression_time: float,
     max_regression_time: float,
     mlflow_client: MlflowClient,
@@ -111,9 +119,12 @@ def regression_predict(
     )
     mlflow_model, sklearn_model = get_model(model_uri=model_uri)
     scaler = None
-    if scaler_file:
+    if mlflow_model.metadata.metadata["scaling"]:
         logger.info("Load scaler from MLFlow.")
-        scaler = get_scaler(model_uri=model_uri, scaler_file=scaler_file)
+        scaler = get_scaler(
+            model_uri=model_uri,
+            scaler_file=mlflow_model.metadata.metadata["scaler_file"],
+        )
 
     # Calculate expected time for each provider
     regression_values = {}
@@ -153,7 +164,6 @@ def predict(
             input_data=input_inference,
             model_name=settings.CLASSIFICATION_MODEL_NAME,
             model_version=settings.CLASSIFICATION_MODEL_VERSION,
-            scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
             mlflow_client=mlflow_client,
             logger=logger,
         )
@@ -167,7 +177,6 @@ def predict(
             input_data=input_inference,
             model_name=settings.REGRESSION_MODEL_NAME,
             model_version=settings.REGRESSION_MODEL_VERSION,
-            scaler_file=settings.SCALER_FILE if settings.SCALING_ENABLE else None,
             min_regression_time=settings.REGRESSION_MIN_TIME,
             max_regression_time=settings.REGRESSION_MAX_TIME,
             mlflow_client=mlflow_client,
@@ -251,7 +260,12 @@ def pre_process_message(
     """
     data = {}
     df_msg = pd.DataFrame(message["providers"])
-    df_msg = calculate_derived_properties(df=df, complex_templates=complex_templates)
+    df_msg[MSG_TEMPLATE_NAME] = message[MSG_TEMPLATE_NAME]
+    invalid_keys = set(df_msg.columns).difference(MSG_VALID_KEYS)
+    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+    df_msg = calculate_derived_properties(
+        df=df_msg, complex_templates=complex_templates
+    )
     for _, row in df_msg.iterrows():
         # Filter historical values related to the target provider and region
         # and retrieve latest details about success and failure percentage.
@@ -271,15 +285,17 @@ def pre_process_message(
 
         data[row[DF_PROVIDER]] = {
             **row.to_dict(),
-            "test_failure_perc_30d": row["test_failure_perc_30d"],
-            "test_failure_perc_7d": row["test_failure_perc_7d"],
-            "test_failure_perc_1d": row["test_failure_perc_1d"],
-            "overbooking_ram": row["overbooking_ram"],
-            "overbooking_cpu": row["overbooking_cpu"],
+            MSG_TEST_FAIL_PERC_30D: row[MSG_TEST_FAIL_PERC_30D],
+            MSG_TEST_FAIL_PERC_7D: row[MSG_TEST_FAIL_PERC_7D],
+            MSG_TEST_FAIL_PERC_1D: row[MSG_TEST_FAIL_PERC_1D],
+            MSG_OVERBOOK_RAM: row[MSG_OVERBOOK_RAM],
+            MSG_OVERBOOK_CORES: row[MSG_OVERBOOK_CORES],
             DF_AVG_SUCCESS_TIME: avg_success_time,
             DF_AVG_FAIL_TIME: avg_failure_time,
             DF_FAIL_PERC: failure_percentage,
-            K_RES_EXACT: row[MSG_INSTANCES_WITH_EXACT_FLAVORS] / row[MSG_INSTANCE_REQ],
+            K_RES_EXACT: row[MSG_INSTANCES_WITH_EXACT_FLAVORS] / row[MSG_INSTANCE_REQ]
+            if row[MSG_INSTANCE_REQ] > 0
+            else 0,
         }
         logger.debug(
             "The following data has been requested on provider '%s' on region '%s': %s",
@@ -302,7 +318,7 @@ def create_message(
                 data = {**values, **i}
                 break
         ranked_providers.append(data)
-    message = {"uuid": deployment_uuid, "ranked_providers": ranked_providers}
+    message = {MSG_DEP_UUID: deployment_uuid, "ranked_providers": ranked_providers}
     logger.debug("Output message: %s", message)
     return message
 

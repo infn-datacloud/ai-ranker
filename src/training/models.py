@@ -13,6 +13,7 @@ class MetaData(BaseModel):
     features_number: int = Field(description="Number of features")
     remove_outliers: bool = Field(default=False, description="Flag to remove outliers")
     scaling: bool = Field(default=False, description="Scaling enabled")
+    scaler_file: str | None = Field(default=None, description="Scaler file name")
 
     @model_validator(mode="before")
     @classmethod
