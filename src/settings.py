@@ -1,11 +1,17 @@
 from logging import Logger
 from typing import Any
 
-import mlflow.environment_variables
-from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
+from typing_extensions import Self
 
 
 class MLFlowSettings(BaseSettings):
@@ -232,13 +238,12 @@ class InferenceSettings(CommonSettings):
         default=0, description="Inference topic read offset."
     )
 
-    @field_validator("REGRESSION_MAX_TIME")
-    @classmethod
-    def greater_then_min(cls, v: float, values: dict) -> float:
-        assert v > values["REGRESSION_MIN_TIME"], (
+    @model_validator(mode="after")
+    def greater_then_min(self) -> Self:
+        assert self.REGRESSION_MAX_TIME > self.REGRESSION_MIN_TIME, (
             "Max regression time must be greater than min regression time"
         )
-        return v
+        return self
 
 
 def load_training_settings(logger: Logger) -> TrainingSettings:
