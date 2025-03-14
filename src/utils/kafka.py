@@ -17,20 +17,16 @@ def create_kafka_consumer(
     """Create kafka consumer."""
     if consumer_timeout_ms == 0:
         consumer_timeout_ms = float("inf")
-    try:
-        consumer = KafkaConsumer(
-            topic,
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset="earliest",
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # deserializza il JSON
-            consumer_timeout_ms=consumer_timeout_ms,
-        )
-    except NoBrokersAvailable:
-        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
-        exit(1)
+    consumer = KafkaConsumer(
+        topic,
+        bootstrap_servers=kafka_server_url,
+        auto_offset_reset="earliest",
+        # enable_auto_commit=False,
+        value_deserializer=lambda x: json.loads(
+            x.decode("utf-8")
+        ),  # deserializza il JSON
+        consumer_timeout_ms=consumer_timeout_ms,
+    )
 
     # TODO: Manage automatic partitioning
     # tp = TopicPartition(topic, partition)

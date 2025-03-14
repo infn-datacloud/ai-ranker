@@ -63,19 +63,17 @@ STATUS_MAP = {
 
 
 def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
-    """Upload from local file the dataset."""
-    try:
-        df = pd.read_csv(f"{filename}")
-        logger.debug("Uploaded dataframe:")
-        logger.debug(df)
-    except FileNotFoundError:
-        logger.error("File %s not found", filename)
-        exit(1)
+    """Upload from a local CSV file the dataset."""
+    df = pd.read_csv(f"{filename}")
+    logger.debug("Uploaded dataframe:")
+    logger.debug(df)
     return df
 
 
-def load_dataset_from_kafka(*, consumer: KafkaConsumer, logger: Logger):
-    """Load from kafka the dataset."""
+def load_dataset_from_kafka_messages(
+    *, consumer: KafkaConsumer, logger: Logger
+) -> pd.DataFrame:
+    """Read kafka messages and create a dataset from them."""
     l_data = [message.value for message in consumer]
     df = pd.DataFrame(l_data)
     logger.debug("Uploaded dataframe:")
@@ -83,25 +81,24 @@ def load_dataset_from_kafka(*, consumer: KafkaConsumer, logger: Logger):
     return df
 
 
-def load_dataset(
+def load_training_data(
     *, settings: TrainingSettings | InferenceSettings, logger: Logger
 ) -> pd.DataFrame:
-    """Load the dataset from a local one or from kafka."""
+    """Load the dataset from a local CSV file or from a kafka topic."""
     logger.info("Upload training data")
     if settings.LOCAL_MODE:
-        if settings.LOCAL_DATASET is None:
-            logger.error("LOCAL_DATASET environment variable has not been set.")
-            exit(1)
-        return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
+        if settings.LOCAL_DATASET:
+            return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
+        raise ValueError("LOCAL_DATASET environment variable has not been set.")
     consumer = create_kafka_consumer(
-        kafka_server_url=str(settings.KAFKA_HOSTNAME),
+        kafka_server_url=settings.KAFKA_HOSTNAME,
         topic=settings.KAFKA_TRAINING_TOPIC,
         partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
         offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
         consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
         logger=logger,
     )
-    df = load_dataset_from_kafka(consumer=consumer, logger=logger)
+    df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
     consumer.close()
     return df
 
@@ -130,25 +127,17 @@ def preprocessing(
     """
     logger.info("Pre-process data")
     logger.debug("Initial Dataframe:\n%s", df)
+    if df.empty:
+        logger.warning("Received an empty dataframe")
+        return df
 
-    # Remove NaN values
+    # Map STATUS to integer and Convert df[DF_TIMESTAMP]. This may generate NaN values.
+    # Remove them.
+    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
+    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
     df.dropna(inplace=True)
     if df.empty:
-        logger.warning("Empty dataframe")
-        return df
-
-    # Map STATUS to integer and remove rows where the map for df[DF_STATUS] fails
-    df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
-    df.dropna(subset=[DF_STATUS], inplace=True)
-    if df.empty:
-        logger.warning("Empty dataframe")
-        return df
-
-    # Convert df[DF_TIMESTAMP] and remove rows with NaN values
-    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
-    df.dropna(subset=[DF_TIMESTAMP], inplace=True)
-    if df.empty:
-        logger.warning("Empty dataframe")
+        logger.warning("Dropping NaN and None generated an empty dataframe")
         return df
 
     df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]

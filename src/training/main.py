@@ -4,6 +4,7 @@ from logging import Logger
 import numpy as np
 import pandas as pd
 import shap
+from kafka.errors import NoBrokersAvailable
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
@@ -20,7 +21,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
-from processing import DF_TIMESTAMP, load_dataset, preprocessing
+from processing import DF_TIMESTAMP, load_training_data, preprocessing
 from settings import TrainingSettings, load_training_settings
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
 from utils.mlflow import log_on_mlflow, setup_mlflow
@@ -409,11 +410,15 @@ def run(logger: Logger) -> None:
     settings = load_training_settings(logger=logger)
     setup_mlflow(logger=logger)
 
-    # Load the dataset
-    df = load_dataset(settings=settings, logger=logger)
-    if df.empty:
-        logger.info("Empty DataFrame")
-        return
+    # Load the training dataset
+    try:
+        df = load_training_data(settings=settings, logger=logger)
+    except FileNotFoundError:
+        logger.error("File '%s' not found", settings.LOCAL_DATASET)
+        exit(1)
+    except NoBrokersAvailable:
+        logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
+        exit(1)
 
     # Pre-process data
     df = preprocessing(
@@ -421,6 +426,19 @@ def run(logger: Logger) -> None:
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
         logger=logger,
     )
+    if df.empty:
+        logger.warning("No data to pre-process. No model generation.")
+        return
+
+    missing_features = set(settings.FINAL_FEATURES).difference(set(df.columns))
+    if len(missing_features) > 0:
+        logger.error(
+            "Given final features are not present in the training data: %s",
+            missing_features,
+        )
+        exit(1)
+    df = df[settings.FINAL_FEATURES]
+
     metadata = MetaData(
         start_time=df[DF_TIMESTAMP].max().strftime("%Y-%m-%d %H:%M:%S"),
         end_time=df[DF_TIMESTAMP].min().strftime("%Y-%m-%d %H:%M:%S"),
@@ -428,7 +446,6 @@ def run(logger: Logger) -> None:
         features_number=len(settings.FINAL_FEATURES),
         remove_outliers=settings.REMOVE_OUTLIERS,
     )
-    df = df[settings.FINAL_FEATURES]
 
     # Classification training phase
     logger.info("Classification phase started")

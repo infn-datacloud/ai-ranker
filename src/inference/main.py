@@ -40,7 +40,7 @@ from processing import (
     MSG_RAM_USAGE,
     MSG_REGION_NAME,
     MSG_TEMPLATE_NAME,
-    load_dataset,
+    load_training_data,
     preprocessing,
 )
 from settings import InferenceSettings, load_inference_settings
@@ -406,7 +406,7 @@ def run(logger: Logger) -> None:
 
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
-            df = load_dataset(settings=settings, logger=logger)
+            df = load_training_data(settings=settings, logger=logger)
             df = preprocessing(
                 df=df,
                 complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
