@@ -118,8 +118,12 @@ class TrainingSettings(CommonSettings):
     THRESHOLD_FACTOR: float = Field(
         default=1.5, description="Multiplication factor for outlier threshold"
     )
-    FINAL_FEATURES: list = Field(
-        description="List of final features in the processed Dataset",
+    X_FEATURES: list = Field(description="List of features to use as X")
+    Y_CLASSIFICATION_FEATURES: list = Field(
+        description="List of features to use as Y for classification"
+    )
+    Y_REGRESSION_FEATURES: list = Field(
+        description="List of features to use as Y for regression"
     )
 
     @field_validator("CLASSIFICATION_MODELS", mode="before")
