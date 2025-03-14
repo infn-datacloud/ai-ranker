@@ -264,19 +264,21 @@ def pre_process_message(
     for el in message["providers"]:
         # Filter historical values related to the target provider and region
         provider_region = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
-        df_filtered = df[
-            (df[MSG_TEMPLATE_NAME] == template_name)
-            & (df[DF_PROVIDER] == provider_region)
-        ]
+
+        # Retrieve latest details for the combination: provider-region-template
         avg_success_time = 0.0
         avg_failure_time = 0.0
         failure_percentage = 0.0
-        # Retrieve latest details
-        if not df_filtered.empty:
-            idx_latest = df_filtered[DF_TIMESTAMP].idxmax()
-            avg_success_time = float(df_filtered.loc[idx_latest, DF_AVG_SUCCESS_TIME])
-            avg_failure_time = float(df_filtered.loc[idx_latest, DF_AVG_FAIL_TIME])
-            failure_percentage = float(df_filtered.loc[idx_latest, DF_FAIL_PERC])
+        if not df.empty:
+            df = df[
+                (df[MSG_TEMPLATE_NAME] == template_name)
+                & (df[DF_PROVIDER] == provider_region)
+            ]
+        if not df.empty:
+            idx_latest = df[DF_TIMESTAMP].idxmax()
+            avg_success_time = float(df.loc[idx_latest, DF_AVG_SUCCESS_TIME])
+            avg_failure_time = float(df.loc[idx_latest, DF_AVG_FAIL_TIME])
+            failure_percentage = float(df.loc[idx_latest, DF_FAIL_PERC])
 
         calculated_values = {
             DF_CPU_DIFF: (el[MSG_CPU_QUOTA] - el[MSG_CPU_REQ]) - el[MSG_CPU_USAGE],
