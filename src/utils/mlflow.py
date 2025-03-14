@@ -5,6 +5,7 @@ from tempfile import NamedTemporaryFile
 
 import mlflow
 import mlflow.environment_variables
+import mlflow.exceptions
 import mlflow.sklearn
 import pandas as pd
 from mlflow.pyfunc import PyFuncModel, load_model
@@ -50,39 +51,45 @@ def log_on_mlflow(
     scaling_enable,
     scaler_file: str,
     scaler_bytes: bytes,
+    logger: Logger,
 ):
     """Function to log the model on MLFlow"""
-    # Logging on MLflow
-    with mlflow.start_run():
-        # Log the parameters
-        mlflow.log_params(model_params)
+    logger.info("Logging the model on MLFlow")
+    try:
+        with mlflow.start_run():
+            # Log the parameters
+            mlflow.log_params(model_params)
 
-        # Log the metrics
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
+            # Log the metrics
+            for metric, value in metrics.items():
+                mlflow.log_metric(metric, value)
 
-        # Log the sklearn model and register
-        mlflow.sklearn.log_model(
-            signature=False,
-            sk_model=model,
-            artifact_path=model_name,
-            registered_model_name=model_name,
-            metadata=metadata.model_dump(),
-        )
+            # Log the sklearn model and register
+            mlflow.sklearn.log_model(
+                signature=False,
+                sk_model=model,
+                artifact_path=model_name,
+                registered_model_name=model_name,
+                metadata=metadata.model_dump(),
+            )
 
-        # Add scaler file as model artifact if scaling is enabled
-        if scaling_enable:
-            scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
-            mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
+            # Add scaler file as model artifact if scaling is enabled
+            if scaling_enable:
+                scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
+                mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
 
-        for key, value in metadata.model_dump().items():
-            mlflow.set_tag(key, value)
+            for key, value in metadata.model_dump().items():
+                mlflow.set_tag(key, value)
 
-        with NamedTemporaryFile(
-            delete=True, prefix="feature_importance", suffix=".csv"
-        ) as temp_file:
-            feature_importance_df.to_csv(temp_file.name, index=False)
-            mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
+            with NamedTemporaryFile(
+                delete=True, prefix="feature_importance", suffix=".csv"
+            ) as temp_file:
+                feature_importance_df.to_csv(temp_file.name, index=False)
+                mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
+            logger.info("Model %s successfully logged on MLflow", model_name)
+    except mlflow.exceptions.MlflowException as e:
+        logger.error("Failed to connect to Mlflow server: %s", e)
+        exit(1)
 
 
 def get_model_uri(

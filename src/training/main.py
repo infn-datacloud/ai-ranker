@@ -189,7 +189,6 @@ def train_model(
     logger: Logger,
 ) -> None:
     """Function to train a generic sklearn ML model"""
-
     # Scale x_train if scaling is enabled
     if scaling_enable:
         scaler = RobustScaler()
@@ -209,7 +208,9 @@ def train_model(
     # Train the model
     logger.info("Training model '%s' with params: %s", model_name, model_params)
     model.fit(x_train_scaled, y_train.values.ravel())
+    logger.info("Model successfully trained")
 
+    logger.info("Computing metrics")
     # Get feature importance
     feature_importance_df = get_feature_importance(
         model, x_train.columns, x_train_scaled, logger
@@ -238,26 +239,20 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
+    logger.info("Metrics computed")
 
-    logger.info("Model successfully trained and metrics computed")
-    logger.info("Logging the model on MLFlow")
-    try:
-        # Log the model on MLFlow
-        log_on_mlflow(
-            model_params,
-            model_name,
-            model,
-            metrics,
-            metadata,
-            feature_importance_df,
-            scaling_enable,
-            scaler_file,
-            scaler_bytes,
-        )
-        logger.info("Model %s successfully logged on MLflow", model_name)
-    except Exception as e:
-        logger.error("Error in logging the model in MLFlow server: %s", e)
-        exit(1)
+    log_on_mlflow(
+        model_params,
+        model_name,
+        model,
+        metrics,
+        metadata,
+        feature_importance_df,
+        scaling_enable,
+        scaler_file,
+        scaler_bytes,
+        logger=logger,
+    )
 
 
 def kfold_cross_validation(
