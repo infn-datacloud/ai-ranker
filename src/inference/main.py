@@ -23,14 +23,9 @@ from utils import (
     MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
-    MSG_OVERBOOK_CORES,
-    MSG_OVERBOOK_RAM,
     MSG_PROVIDER_NAME,
     MSG_REGION_NAME,
     MSG_TEMPLATE_NAME,
-    MSG_TEST_FAIL_PERC_1D,
-    MSG_TEST_FAIL_PERC_7D,
-    MSG_TEST_FAIL_PERC_30D,
     MSG_VALID_KEYS,
     load_data_from_file,
     write_data_to_file,
@@ -287,14 +282,11 @@ def pre_process_message(
             avg_success_time = float(df.loc[idx_latest, DF_AVG_SUCCESS_TIME])
             avg_failure_time = float(df.loc[idx_latest, DF_AVG_FAIL_TIME])
             failure_percentage = float(df.loc[idx_latest, DF_FAIL_PERC])
+        else:
+            logger.info("No historical data about this kind of requests")
 
         data[row[DF_PROVIDER]] = {
             **row.to_dict(),
-            MSG_TEST_FAIL_PERC_30D: row[MSG_TEST_FAIL_PERC_30D],
-            MSG_TEST_FAIL_PERC_7D: row[MSG_TEST_FAIL_PERC_7D],
-            MSG_TEST_FAIL_PERC_1D: row[MSG_TEST_FAIL_PERC_1D],
-            MSG_OVERBOOK_RAM: row[MSG_OVERBOOK_RAM],
-            MSG_OVERBOOK_CORES: row[MSG_OVERBOOK_CORES],
             DF_AVG_SUCCESS_TIME: avg_success_time,
             DF_AVG_FAIL_TIME: avg_failure_time,
             DF_FAIL_PERC: failure_percentage,
@@ -401,6 +393,8 @@ def run(logger: Logger) -> None:
     # Listen for new messages from the inference topic
     logger.info("Start listening for new messages")
     for message in input_consumer:
+        aborted = False
+
         logger.info("New message received")
         if not settings.LOCAL_MODE:
             logger.debug("Message: %s", message)
@@ -424,58 +418,76 @@ def run(logger: Logger) -> None:
         # Process new message.
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
-            df = load_training_data(
-                local_mode=settings.LOCAL_MODE,
-                local_dataset=settings.LOCAL_DATASET,
-                kafka_server_url=settings.KAFKA_HOSTNAME,
-                kafka_topic=settings.KAFKA_TRAINING_TOPIC,
-                kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
-                kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
-                kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
-                logger=logger,
-            )
-            df = preprocessing(
-                df=df,
-                complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
-                logger=logger,
-            )
-            input_data = pre_process_message(
-                message=data,
-                df=df,
-                complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
-                logger=logger,
-            )
-            classification_prediction, regression_prediction = predict(
-                input_inference=input_data,
-                mlflow_client=client,
-                settings=settings,
-                logger=logger,
-            )
-            sorted_results = merge_and_sort_results(
-                input_inference=input_data,
-                classification_response=classification_prediction,
-                regression_response=regression_prediction,
-                settings=settings,
-                logger=logger,
-            )
+            try:
+                df = load_training_data(
+                    local_mode=settings.LOCAL_MODE,
+                    local_dataset=settings.LOCAL_DATASET,
+                    kafka_server_url=settings.KAFKA_HOSTNAME,
+                    kafka_topic=settings.KAFKA_TRAINING_TOPIC,
+                    kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+                    kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+                    kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+                    logger=logger,
+                )
+                df = preprocessing(
+                    df=df,
+                    complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
+                    logger=logger,
+                )
+                input_data = pre_process_message(
+                    message=data,
+                    df=df,
+                    complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
+                    logger=logger,
+                )
+                classification_prediction, regression_prediction = predict(
+                    input_inference=input_data,
+                    mlflow_client=client,
+                    settings=settings,
+                    logger=logger,
+                )
+                sorted_results = merge_and_sort_results(
+                    input_inference=input_data,
+                    classification_response=classification_prediction,
+                    regression_response=regression_prediction,
+                    settings=settings,
+                    logger=logger,
+                )
+            except FileNotFoundError:
+                aborted = True
+                logger.error("File '%s' not found", settings.LOCAL_DATASET)
+            except NoBrokersAvailable:
+                aborted = True
+                logger.error(
+                    "Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME
+                )
+            except AssertionError as e:
+                aborted = True
+                logger.error(e)
         else:
             logger.info("Only one provider. No inference needed")
             el = data["providers"][0]
             provider = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
+            if el[MSG_INSTANCE_REQ] > 0:
+                res_exact = el[MSG_INSTANCES_WITH_EXACT_FLAVORS] / el[MSG_INSTANCE_REQ]
+            else:
+                res_exact = 0
             sorted_results = {
                 provider: {
                     K_CLASS: NO_PREDICTED_VALUE,
                     K_REGR: NO_PREDICTED_VALUE,
-                    K_RES_EXACT: el[MSG_INSTANCES_WITH_EXACT_FLAVORS]
-                    / el[MSG_INSTANCE_REQ],
+                    K_RES_EXACT: res_exact,
                     **el,
                 }
             }
 
-        output_message = create_message(
-            sorted_results=sorted_results,
-            input_data=data["providers"],
-            deployment_uuid=data["uuid"],
-            logger=logger,
-        )
-        send_message(output_message, settings=settings, logger=logger)
+        if aborted:
+            logger.error("Inference process aborted")
+        else:
+            output_message = create_message(
+                sorted_results=sorted_results,
+                input_data=data["providers"],
+                deployment_uuid=data["uuid"],
+                logger=logger,
+            )
+            send_message(output_message, settings=settings, logger=logger)
