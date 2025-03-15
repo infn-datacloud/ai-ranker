@@ -62,11 +62,13 @@ class CommonSettings(BaseSettings):
     KAFKA_TRAINING_TOPIC: str = Field(
         default="training", description="Kafka default topic."
     )
-    KAFKA_TRAINING_TOPIC_PARTITION: int = Field(
-        default=0, description="Training topic partition assigned to this consumer."
+    KAFKA_TRAINING_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Training topic partition assigned to this consumer.",
     )
     KAFKA_TRAINING_TOPIC_OFFSET: int = Field(
-        default=0, description="Training topic read offset."
+        default=0, ge=0, description="Training topic read offset."
     )
     KAFKA_TRAINING_TOPIC_TIMEOUT: int = Field(
         default=1000,
@@ -220,11 +222,13 @@ class InferenceSettings(CommonSettings):
     KAFKA_INFERENCE_TOPIC: str = Field(
         default="inference", description="Kafka default inference topic."
     )
-    KAFKA_INFERENCE_TOPIC_PARTITION: int = Field(
-        default=0, description="Inference topic partition assigned to this consumer."
+    KAFKA_INFERENCE_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Inference topic partition assigned to this consumer.",
     )
     KAFKA_INFERENCE_TOPIC_OFFSET: int = Field(
-        default=0, description="Inference topic read offset."
+        default=0, ge=0, description="Inference topic read offset."
     )
     KAFKA_INFERENCE_TOPIC_TIMEOUT: int = Field(
         default=0,
@@ -235,11 +239,13 @@ class InferenceSettings(CommonSettings):
     KAFKA_RANKED_PROVIDERS_TOPIC: str = Field(
         default="ranked_providers", description="Kafka default inference topic."
     )
-    KAFKA_RANKED_PROVIDERS_TOPIC_PARTITION: int = Field(
-        default=0, description="Inference topic partition assigned to this consumer."
+    KAFKA_RANKED_PROVIDERS_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Inference topic partition assigned to this consumer.",
     )
     KAFKA_RANKED_PROVIDERS_TOPIC_OFFSET: int = Field(
-        default=0, description="Inference topic read offset."
+        default=0, ge=0, description="Inference topic read offset."
     )
 
     @model_validator(mode="after")

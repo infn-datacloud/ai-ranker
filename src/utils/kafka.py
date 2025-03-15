@@ -1,7 +1,7 @@
 import json
 from logging import Logger
 
-from kafka import KafkaConsumer, KafkaProducer  # , TopicPartition
+from kafka import KafkaConsumer, KafkaProducer, TopicPartition
 from kafka.errors import NoBrokersAvailable
 
 
@@ -9,7 +9,7 @@ def create_kafka_consumer(
     *,
     kafka_server_url: str,
     topic: str,
-    partition: int = 0,
+    partition: int | None = None,
     offset: int = 0,
     consumer_timeout_ms: int = 0,
     auto_offset_reset: str = "latest",
@@ -18,43 +18,37 @@ def create_kafka_consumer(
     """Create kafka consumer."""
     if consumer_timeout_ms == 0:
         consumer_timeout_ms = float("inf")
-    consumer = KafkaConsumer(
-        topic,
-        bootstrap_servers=kafka_server_url,
-        auto_offset_reset=auto_offset_reset,
-        consumer_timeout_ms=consumer_timeout_ms,
-        # enable_auto_commit=False,
-        value_deserializer=lambda x: json.loads(x.decode("utf-8")),  # Deserialize JSON
-    )
-    if consumer.bootstrap_connected():
-        logger.info("Subscribed to topics: %s", consumer.subscription())
 
-    # TODO: Manage automatic partitioning ?
-    # tp = TopicPartition(topic, partition)
-    # consumer.assign([tp])
-    # consumer.seek(tp, offset)
-    # TODO: Manage disconnection and reconnections ?
-    # attempt = 0
-    # while True:
-    #     if not consumer.bootstrap_connected():
-    #         if attempt < settings.KAFKA_RECONNECT_MAX_RETRIES:
-    #             logger.warning(
-    #                 "Can't connect to topic '%s' on server '%s'. Waiting for %ss",
-    #                 settings.KAFKA_TRAINING_TOPIC,
-    #                 settings.KAFKA_HOSTNAME,
-    #                 settings.KAFKA_RECONNECT_PERIOD,
-    #             )
-    #             attempt += 1
-    #         else:
-    #             logger.error(
-    #                 "connect to topic '%s' on server '%s'. Max attempt reached (%s)",
-    #                 settings.KAFKA_TRAINING_TOPIC,
-    #                 settings.KAFKA_HOSTNAME,
-    #                 settings.KAFKA_RECONNECT_MAX_RETRIES,
-    #             )
-    #         exit(1)
-    #     else:
-    #         attempt = 0
+    if partition is None:
+        consumer = KafkaConsumer(
+            topic,
+            bootstrap_servers=kafka_server_url,
+            auto_offset_reset=auto_offset_reset,
+            consumer_timeout_ms=consumer_timeout_ms,
+            # enable_auto_commit=False,
+            value_deserializer=lambda x: json.loads(
+                x.decode("utf-8")
+            ),  # Deserialize JSON
+        )
+        if consumer.bootstrap_connected():
+            logger.info("Subscribed to topics: %s", consumer.subscription())
+
+    else:
+        consumer = KafkaConsumer(
+            bootstrap_servers=kafka_server_url,
+            auto_offset_reset=auto_offset_reset,
+            consumer_timeout_ms=consumer_timeout_ms,
+            # enable_auto_commit=False,
+            value_deserializer=lambda x: json.loads(
+                x.decode("utf-8")
+            ),  # Deserialize JSON
+        )
+        tp = TopicPartition(topic, partition)
+        consumer.assign([tp])
+        consumer.seek(tp, offset)
+        if consumer.bootstrap_connected():
+            logger.info("Assigned topic: %s", consumer.assignment())
+
     return consumer
 
 

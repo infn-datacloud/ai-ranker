@@ -16,10 +16,10 @@ from processing import (
     DF_PROVIDER,
     DF_TIMESTAMP,
     calculate_derived_properties,
-    load_training_data,
     preprocessing,
 )
 from settings import InferenceSettings, load_inference_settings
+from training.main import load_training_data
 from utils import (
     MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
@@ -397,7 +397,16 @@ def run(logger: Logger) -> None:
 
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
-            df = load_training_data(settings=settings, logger=logger)
+            df = load_training_data(
+                local_mode=settings.LOCAL_MODE,
+                local_dataset=settings.LOCAL_DATASET,
+                kafka_server_url=settings.KAFKA_HOSTNAME,
+                kafka_topic=settings.KAFKA_TRAINING_TOPIC,
+                kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+                kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+                kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+                logger=logger,
+            )
             df = preprocessing(
                 df=df,
                 complex_templates=settings.TEMPLATE_COMPLEX_TYPES,

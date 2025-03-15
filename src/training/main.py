@@ -21,9 +21,11 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
-from processing import DF_TIMESTAMP, load_training_data, preprocessing
+from processing import DF_TIMESTAMP, preprocessing
 from settings import TrainingSettings, load_training_settings
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
+from utils import load_dataset_from_kafka_messages, load_local_dataset
+from utils.kafka import create_kafka_consumer
 from utils.mlflow import log_on_mlflow, setup_mlflow
 
 SEED = 42
@@ -385,6 +387,37 @@ def training_phase(
         )
 
 
+def load_training_data(
+    *,
+    local_mode: bool = False,
+    local_dataset: str | None = None,
+    kafka_server_url: str | None = None,
+    kafka_topic: str | None = None,
+    kafka_topic_partition: int = 0,
+    kafka_topic_offset: int = 0,
+    kafka_consumer_timeout_ms: int = 0,
+    logger: Logger,
+) -> pd.DataFrame:
+    """Load the dataset from a local CSV file or from a kafka topic."""
+    logger.info("Upload training data")
+    if local_mode:
+        if local_dataset:
+            return load_local_dataset(filename=local_dataset, logger=logger)
+        raise ValueError("LOCAL_DATASET environment variable has not been set.")
+    consumer = create_kafka_consumer(
+        kafka_server_url=kafka_server_url,
+        topic=kafka_topic,
+        partition=kafka_topic_partition,
+        offset=kafka_topic_offset,
+        consumer_timeout_ms=kafka_consumer_timeout_ms,
+        auto_offset_reset="earliest",
+        logger=logger,
+    )
+    df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
+    consumer.close()
+    return df
+
+
 def run(logger: Logger) -> None:
     """Function to load the dataset, do preprocessing, perform training and save the
     model on MLFlow"""
@@ -395,7 +428,16 @@ def run(logger: Logger) -> None:
 
     # Load the training dataset
     try:
-        df = load_training_data(settings=settings, logger=logger)
+        df = load_training_data(
+            local_mode=settings.LOCAL_MODE,
+            local_dataset=settings.LOCAL_DATASET,
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            kafka_topic=settings.KAFKA_TRAINING_TOPIC,
+            kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+            kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+            kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+            logger=logger,
+        )
     except FileNotFoundError:
         logger.error("File '%s' not found", settings.LOCAL_DATASET)
         exit(1)

@@ -3,7 +3,6 @@ from logging import Logger
 import numpy as np
 import pandas as pd
 
-from settings import InferenceSettings, TrainingSettings
 from utils import (
     MSG_CPU_QUOTA,
     MSG_CPU_REQ,
@@ -42,10 +41,7 @@ from utils import (
     MSG_VOL_QUOTA,
     MSG_VOL_REQ,
     MSG_VOL_USAGE,
-    load_dataset_from_kafka_messages,
-    load_local_dataset,
 )
-from utils.kafka import create_kafka_consumer
 
 DF_CPU_DIFF = "cpu_diff"
 DF_RAM_DIFF = "ram_diff"
@@ -72,29 +68,6 @@ STATUS_MAP = {
     STATUS_CREATE_COMPLETED: STATUS_CREATE_COMPLETED_VALUE,
     STATUS_CREATE_FAILED: STATUS_CREATE_FAILED_VALUE,
 }
-
-
-def load_training_data(
-    *, settings: TrainingSettings | InferenceSettings, logger: Logger
-) -> pd.DataFrame:
-    """Load the dataset from a local CSV file or from a kafka topic."""
-    logger.info("Upload training data")
-    if settings.LOCAL_MODE:
-        if settings.LOCAL_DATASET:
-            return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
-        raise ValueError("LOCAL_DATASET environment variable has not been set.")
-    consumer = create_kafka_consumer(
-        kafka_server_url=settings.KAFKA_HOSTNAME,
-        topic=settings.KAFKA_TRAINING_TOPIC,
-        partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
-        offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
-        consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
-        auto_offset_reset="earliest",
-        logger=logger,
-    )
-    df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
-    consumer.close()
-    return df
 
 
 def calculate_derived_properties(
