@@ -2,9 +2,49 @@ from logging import Logger
 
 import numpy as np
 import pandas as pd
-from kafka import KafkaConsumer
 
 from settings import InferenceSettings, TrainingSettings
+from utils import (
+    MSG_CPU_QUOTA,
+    MSG_CPU_REQ,
+    MSG_CPU_USAGE,
+    MSG_DEP_COMPLETION_TIME,
+    MSG_DEP_FAILED_TIME,
+    MSG_DEP_TOT_FAILURES,
+    MSG_DEP_UUID,
+    MSG_DISK_QUOTA,
+    MSG_DISK_REQ,
+    MSG_DISK_USAGE,
+    MSG_GPU_REQ,
+    MSG_IMAGES,
+    MSG_INSTANCE_QUOTA,
+    MSG_INSTANCE_REQ,
+    MSG_INSTANCE_USAGE,
+    MSG_INSTANCES_WITH_EXACT_FLAVORS,
+    MSG_OVERBOOK_CORES,
+    MSG_OVERBOOK_RAM,
+    MSG_PROVIDER_NAME,
+    MSG_PUB_IPS_QUOTA,
+    MSG_PUB_IPS_REQ,
+    MSG_PUB_IPS_USAGE,
+    MSG_RAM_QUOTA,
+    MSG_RAM_REQ,
+    MSG_RAM_USAGE,
+    MSG_REGION_NAME,
+    MSG_STATUS,
+    MSG_STATUS_REASON,
+    MSG_TEMPLATE_NAME,
+    MSG_TEST_FAIL_PERC_1D,
+    MSG_TEST_FAIL_PERC_7D,
+    MSG_TEST_FAIL_PERC_30D,
+    MSG_TIMESTAMP,
+    MSG_USER_GROUP,
+    MSG_VOL_QUOTA,
+    MSG_VOL_REQ,
+    MSG_VOL_USAGE,
+    load_dataset_from_kafka_messages,
+    load_local_dataset,
+)
 from utils.kafka import create_kafka_consumer
 
 DF_CPU_DIFF = "cpu_diff"
@@ -23,83 +63,6 @@ DF_FAIL_PERC = "failure_percentage"
 DF_AVG_SUCCESS_TIME = "avg_success_time"
 DF_AVG_FAIL_TIME = "avg_failure_time"
 
-MSG_CPU_QUOTA = "vcpus_quota"
-MSG_CPU_USAGE = "vcpus_usage"
-MSG_CPU_REQ = "vcpus_requ"
-MSG_RAM_QUOTA = "ram_gb_quota"
-MSG_RAM_USAGE = "ram_gb_usage"
-MSG_RAM_REQ = "ram_gb_requ"
-MSG_DISK_QUOTA = "storage_gb_quota"
-MSG_DISK_USAGE = "storage_gb_usage"
-MSG_DISK_REQ = "storage_gb_requ"
-MSG_INSTANCE_QUOTA = "n_instances_quota"
-MSG_INSTANCE_USAGE = "n_instances_usage"
-MSG_INSTANCE_REQ = "n_instances_requ"
-MSG_VOL_QUOTA = "n_volumes_quota"
-MSG_VOL_USAGE = "n_volumes_usage"
-MSG_VOL_REQ = "n_volumes_requ"
-MSG_PUB_IPS_QUOTA = "floating_ips_quota"
-MSG_PUB_IPS_USAGE = "floating_ips_usage"
-MSG_PUB_IPS_REQ = "floating_ips_requ"
-MSG_GPU_REQ = "gpus_requ"
-MSG_STATUS = "status"
-MSG_STATUS_REASON = "status_reason"
-MSG_TEMPLATE_NAME = "template_name"
-MSG_DEP_COMPLETION_TIME = "completed_time"
-MSG_DEP_FAILED_TIME = "tot_failed_time"
-MSG_DEP_TOT_FAILURES = "n_failures"
-MSG_PROVIDER_NAME = "provider_name"
-MSG_REGION_NAME = "region_name"
-MSG_TIMESTAMP = "timestamp"
-MSG_INSTANCES_WITH_EXACT_FLAVORS = "exact_flavors"
-MSG_DEP_UUID = "uuid"
-MSG_TEST_FAIL_PERC_30D = "test_failure_perc_30d"
-MSG_TEST_FAIL_PERC_7D = "test_failure_perc_7d"
-MSG_TEST_FAIL_PERC_1D = "test_failure_perc_1d"
-MSG_OVERBOOK_RAM = "overbooking_ram"
-MSG_OVERBOOK_CORES = "overbooking_cores"
-MSG_IMAGES = "images"
-MSG_USER_GROUP = "user_group"
-
-MSG_VALID_KEYS = [
-    MSG_CPU_QUOTA,
-    MSG_CPU_USAGE,
-    MSG_CPU_REQ,
-    MSG_RAM_QUOTA,
-    MSG_RAM_USAGE,
-    MSG_RAM_REQ,
-    MSG_DISK_QUOTA,
-    MSG_DISK_USAGE,
-    MSG_DISK_REQ,
-    MSG_INSTANCE_QUOTA,
-    MSG_INSTANCE_USAGE,
-    MSG_INSTANCE_REQ,
-    MSG_VOL_QUOTA,
-    MSG_VOL_USAGE,
-    MSG_VOL_REQ,
-    MSG_PUB_IPS_QUOTA,
-    MSG_PUB_IPS_USAGE,
-    MSG_PUB_IPS_REQ,
-    MSG_GPU_REQ,
-    MSG_STATUS,
-    MSG_STATUS_REASON,
-    MSG_TEMPLATE_NAME,
-    MSG_DEP_COMPLETION_TIME,
-    MSG_DEP_FAILED_TIME,
-    MSG_DEP_TOT_FAILURES,
-    MSG_PROVIDER_NAME,
-    MSG_REGION_NAME,
-    MSG_TIMESTAMP,
-    MSG_INSTANCES_WITH_EXACT_FLAVORS,
-    MSG_DEP_UUID,
-    MSG_TEST_FAIL_PERC_30D,
-    MSG_TEST_FAIL_PERC_7D,
-    MSG_TEST_FAIL_PERC_1D,
-    MSG_OVERBOOK_RAM,
-    MSG_OVERBOOK_CORES,
-    MSG_IMAGES,
-    MSG_USER_GROUP,
-]
 
 STATUS_CREATE_COMPLETED = "CREATE_COMPLETED"
 STATUS_CREATE_FAILED = "CREATE_FAILED"
@@ -109,29 +72,6 @@ STATUS_MAP = {
     STATUS_CREATE_COMPLETED: STATUS_CREATE_COMPLETED_VALUE,
     STATUS_CREATE_FAILED: STATUS_CREATE_FAILED_VALUE,
 }
-
-
-def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
-    """Upload from a local CSV file the dataset."""
-    df = pd.read_csv(f"{filename}")
-    invalid_keys = set(df.columns).difference(MSG_VALID_KEYS)
-    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
-    logger.debug("Uploaded dataframe:")
-    logger.debug(df)
-    return df
-
-
-def load_dataset_from_kafka_messages(
-    *, consumer: KafkaConsumer, logger: Logger
-) -> pd.DataFrame:
-    """Read kafka messages and create a dataset from them."""
-    l_data = [message.value for message in consumer]
-    df = pd.DataFrame(l_data)
-    invalid_keys = set(df.columns).difference(MSG_VALID_KEYS)
-    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
-    logger.debug("Uploaded dataframe:")
-    logger.debug(df)
-    return df
 
 
 def load_training_data(
@@ -149,6 +89,7 @@ def load_training_data(
         partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
         offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
         consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+        auto_offset_reset="earliest",
         logger=logger,
     )
     df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)

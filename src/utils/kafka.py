@@ -9,10 +9,11 @@ def create_kafka_consumer(
     *,
     kafka_server_url: str,
     topic: str,
-    logger: Logger,
     partition: int = 0,
     offset: int = 0,
     consumer_timeout_ms: int = 0,
+    auto_offset_reset: str = "latest",
+    logger: Logger,
 ) -> KafkaConsumer:
     """Create kafka consumer."""
     if consumer_timeout_ms == 0:
@@ -20,21 +21,19 @@ def create_kafka_consumer(
     consumer = KafkaConsumer(
         topic,
         bootstrap_servers=kafka_server_url,
-        auto_offset_reset="earliest",
-        # enable_auto_commit=False,
-        value_deserializer=lambda x: json.loads(
-            x.decode("utf-8")
-        ),  # deserializza il JSON
+        auto_offset_reset=auto_offset_reset,
         consumer_timeout_ms=consumer_timeout_ms,
+        # enable_auto_commit=False,
+        value_deserializer=lambda x: json.loads(x.decode("utf-8")),  # Deserialize JSON
     )
+    if consumer.bootstrap_connected():
+        logger.info("Subscribed to topics: %s", consumer.subscription())
 
-    # TODO: Manage automatic partitioning
+    # TODO: Manage automatic partitioning ?
     # tp = TopicPartition(topic, partition)
     # consumer.assign([tp])
     # consumer.seek(tp, offset)
-    if consumer.bootstrap_connected():
-        logger.info("Subscribed to topics: %s", consumer.subscription())
-    # TODO: Manage disconnection and reconnections
+    # TODO: Manage disconnection and reconnections ?
     # attempt = 0
     # while True:
     #     if not consumer.bootstrap_connected():
@@ -64,8 +63,7 @@ def create_kafka_producer(*, kafka_server_url: str, logger: Logger) -> KafkaProd
     try:
         producer = KafkaProducer(
             bootstrap_servers=kafka_server_url,
-            client_id="inference",
-            value_serializer=lambda x: json.dumps(x).encode("utf-8"),
+            value_serializer=lambda x: json.dumps(x).encode("utf-8"),  # Serialize JSON
         )
     except NoBrokersAvailable:
         logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)

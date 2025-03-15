@@ -4,6 +4,8 @@ from logging import Logger
 from typing import Any
 
 import pandas as pd
+from kafka import KafkaConsumer
+from kafka.errors import NoBrokersAvailable
 from mlflow import MlflowClient
 from sklearn.preprocessing import RobustScaler
 
@@ -13,6 +15,12 @@ from processing import (
     DF_FAIL_PERC,
     DF_PROVIDER,
     DF_TIMESTAMP,
+    calculate_derived_properties,
+    load_training_data,
+    preprocessing,
+)
+from settings import InferenceSettings, load_inference_settings
+from utils import (
     MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
@@ -25,11 +33,8 @@ from processing import (
     MSG_TEST_FAIL_PERC_7D,
     MSG_TEST_FAIL_PERC_30D,
     MSG_VALID_KEYS,
-    calculate_derived_properties,
-    load_training_data,
-    preprocessing,
+    load_data_from_file,
 )
-from settings import InferenceSettings, load_inference_settings
 from utils.kafka import create_kafka_consumer, create_kafka_producer
 from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
 
@@ -323,14 +328,6 @@ def create_message(
     return message
 
 
-def load_local_messages(*, filename: str | None, logger: Logger) -> list[dict]:
-    """Load local messages from a text file."""
-    with open(filename) as file:
-        messages = json.load(file)
-    logger.debug("Loaded messages: %s", messages)
-    return messages
-
-
 def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> None:
     """Send message to kafka or write it to file."""
     if settings.LOCAL_MODE:
@@ -354,29 +351,39 @@ def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> 
         )
 
 
+def connect_consumer_or_load_data(
+    settings: InferenceSettings, logger: Logger
+) -> KafkaConsumer | list[dict]:
+    if settings.LOCAL_MODE:
+        if settings.LOCAL_IN_MESSAGES is None:
+            logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
+            exit(1)
+            try:
+                return load_data_from_file(
+                    filename=settings.LOCAL_IN_MESSAGES, logger=logger
+                )
+            except FileNotFoundError:
+                logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
+                exit(1)
+    try:
+        return create_kafka_consumer(
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            topic=settings.KAFKA_INFERENCE_TOPIC,
+            consumer_timeout_ms=settings.KAFKA_INFERENCE_TOPIC_TIMEOUT,
+            logger=logger,
+        )
+    except NoBrokersAvailable:
+        logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
+        exit(1)
+
+
 def run(logger: Logger) -> None:
     """Function to load the dataset, do preprocessing, load the
     model from MLFlow and infer the best provider."""
     # Load the settings and setup MLFlow and create the MLflow client
     settings = load_inference_settings(logger=logger)
-    setup_mlflow(logger=logger)
-    client = MlflowClient()
-    if settings.LOCAL_MODE:
-        if settings.LOCAL_IN_MESSAGES is None:
-            logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
-            exit(1)
-        consumer = load_local_messages(
-            filename=settings.LOCAL_IN_MESSAGES, logger=logger
-        )
-    else:
-        consumer = create_kafka_consumer(
-            kafka_server_url=settings.KAFKA_HOSTNAME,
-            topic=settings.KAFKA_INFERENCE_TOPIC,
-            partition=settings.KAFKA_INFERENCE_TOPIC_PARTITION,
-            offset=settings.KAFKA_INFERENCE_TOPIC_OFFSET,
-            consumer_timeout_ms=settings.KAFKA_INFERENCE_TOPIC_TIMEOUT,
-            logger=logger,
-        )
+    client = setup_mlflow(logger=logger)
+    consumer = connect_consumer_or_load_data(settings=settings, logger=logger)
 
     # Listen for new messages from the inference topic
     for message in consumer:

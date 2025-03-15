@@ -16,8 +16,8 @@ from settings import load_mlflow_settings
 from training.models import MetaData
 
 
-def setup_mlflow(*, logger: Logger) -> None:
-    """Function to set up the mlflow settings"""
+def setup_mlflow(*, logger: Logger) -> mlflow.MlflowClient:
+    """Function to set up the mlflow settings and return a Client."""
     logger.info("Setting up MLFlow service communication")
     settings = load_mlflow_settings(logger=logger)
     try:
@@ -36,6 +36,7 @@ def setup_mlflow(*, logger: Logger) -> None:
 
         mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
+        return mlflow.MlflowClient()
     except mlflow.exceptions.MlflowException as e:
         logger.error(e.message)
         exit(1)
