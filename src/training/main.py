@@ -410,7 +410,6 @@ def load_training_data(
         partition=kafka_topic_partition,
         offset=kafka_topic_offset,
         consumer_timeout_ms=kafka_consumer_timeout_ms,
-        auto_offset_reset="earliest",
         logger=logger,
     )
     df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)

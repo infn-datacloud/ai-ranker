@@ -1,4 +1,3 @@
-import json
 import time
 from logging import Logger
 from typing import Any
@@ -34,6 +33,7 @@ from utils import (
     MSG_TEST_FAIL_PERC_30D,
     MSG_VALID_KEYS,
     load_data_from_file,
+    write_data_to_file,
 )
 from utils.kafka import create_kafka_consumer, create_kafka_producer
 from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
@@ -334,10 +334,9 @@ def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> 
         if settings.LOCAL_OUT_MESSAGES is None:
             logger.error("LOCAL_OUT_MESSAGES environment variable has not been set.")
             return
-        # 'a' mode appends without overwriting
-        with open(settings.LOCAL_OUT_MESSAGES, "a") as file:
-            file.write(json.dumps(message, indent=4))
-        logger.info("Message written into %s", settings.LOCAL_OUT_MESSAGES)
+        write_data_to_file(
+            filename=settings.LOCAL_OUT_MESSAGES, data=message, logger=logger
+        )
     else:
         producer = create_kafka_producer(
             kafka_server_url=settings.KAFKA_HOSTNAME, logger=logger
@@ -351,27 +350,38 @@ def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> 
         )
 
 
-def connect_consumer_or_load_data(
+def connect_consumers_or_load_data(
     settings: InferenceSettings, logger: Logger
-) -> KafkaConsumer | list[dict]:
+) -> tuple[KafkaConsumer, KafkaConsumer] | tuple[list[dict], list[dict]]:
     if settings.LOCAL_MODE:
         if settings.LOCAL_IN_MESSAGES is None:
             logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
             exit(1)
             try:
-                return load_data_from_file(
+                inputs = load_data_from_file(
                     filename=settings.LOCAL_IN_MESSAGES, logger=logger
                 )
+                outputs = load_data_from_file(
+                    filename=settings.LOCAL_OUT_MESSAGES, logger=logger
+                )
+                return inputs, outputs
             except FileNotFoundError:
                 logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
                 exit(1)
     try:
-        return create_kafka_consumer(
+        input_consumer = create_kafka_consumer(
             kafka_server_url=settings.KAFKA_HOSTNAME,
             topic=settings.KAFKA_INFERENCE_TOPIC,
             consumer_timeout_ms=settings.KAFKA_INFERENCE_TOPIC_TIMEOUT,
             logger=logger,
         )
+        output_consumer = create_kafka_consumer(
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            topic=settings.KAFKA_RANKED_PROVIDERS_TOPIC,
+            consumer_timeout_ms=settings.KAFKA_RANKED_PROVIDERS_TOPIC_TIMEOUT,
+            logger=logger,
+        )
+        return input_consumer, output_consumer
     except NoBrokersAvailable:
         logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
         exit(1)
@@ -383,10 +393,14 @@ def run(logger: Logger) -> None:
     # Load the settings and setup MLFlow and create the MLflow client
     settings = load_inference_settings(logger=logger)
     client = setup_mlflow(logger=logger)
-    consumer = connect_consumer_or_load_data(settings=settings, logger=logger)
+    input_consumer, output_consumer = connect_consumers_or_load_data(
+        settings=settings, logger=logger
+    )
+    processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
 
     # Listen for new messages from the inference topic
-    for message in consumer:
+    logger.info("Start listening for new messages")
+    for message in input_consumer:
         logger.info("New message received")
         if not settings.LOCAL_MODE:
             logger.debug("Message: %s", message)
@@ -395,6 +409,19 @@ def run(logger: Logger) -> None:
             data = message
         logger.debug("Message data: %s", data)
 
+        # Skip already processed messages
+        idx = -1
+        try:
+            if len(processed_dep_uuids) > 0:
+                idx = processed_dep_uuids.index(data[MSG_DEP_UUID])
+        except ValueError:
+            pass
+        if idx != -1:
+            logger.info("Already processed message. Skipping")
+            _ = processed_dep_uuids.pop(idx)
+            continue
+
+        # Process new message.
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
             df = load_training_data(

@@ -1,5 +1,6 @@
 import json
 from logging import Logger
+from typing import Any
 
 import pandas as pd
 from kafka import KafkaConsumer
@@ -112,3 +113,15 @@ def load_data_from_file(*, filename: str | None, logger: Logger) -> list[dict]:
         data = json.load(file)
     logger.debug("Loaded data: %s", data)
     return data
+
+
+def write_data_to_file(
+    *, filename: str | None, data: dict[str, Any], logger: Logger
+) -> None:
+    """Write data to file."""
+    # 'a' mode appends without overwriting
+    with open(filename, "r+") as file:
+        values = json.load(file)
+        values.append(data)
+        json.dump(values, file, indent=4)
+    logger.info("Message written into %s", filename)

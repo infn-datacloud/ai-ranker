@@ -12,10 +12,14 @@ def create_kafka_consumer(
     partition: int | None = None,
     offset: int = 0,
     consumer_timeout_ms: int = 0,
-    auto_offset_reset: str = "latest",
+    auto_offset_reset: str = "earliest",
     logger: Logger,
 ) -> KafkaConsumer:
-    """Create kafka consumer."""
+    """Create kafka consumer.
+
+    By default, when starting up, read all messages from beginning.
+    It will be a service duty to discard already processed ones.
+    """
     if consumer_timeout_ms == 0:
         consumer_timeout_ms = float("inf")
 

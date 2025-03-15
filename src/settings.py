@@ -247,6 +247,11 @@ class InferenceSettings(CommonSettings):
     KAFKA_RANKED_PROVIDERS_TOPIC_OFFSET: int = Field(
         default=0, ge=0, description="Inference topic read offset."
     )
+    KAFKA_RANKED_PROVIDERS_TOPIC_TIMEOUT: int = Field(
+        default=1000,
+        ge=0,
+        description="Number of milliseconds to wait when reading published messages",
+    )
 
     @model_validator(mode="after")
     def greater_then_min(self) -> Self:
