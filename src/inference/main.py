@@ -12,6 +12,8 @@ from processing import (
     DF_AVG_FAIL_TIME,
     DF_AVG_SUCCESS_TIME,
     DF_FAIL_PERC,
+    DF_MAX_DEP_TIME,
+    DF_MIN_DEP_TIME,
     DF_PROVIDER,
     DF_TIMESTAMP,
     calculate_derived_properties,
@@ -103,8 +105,6 @@ def regression_predict(
     input_data: dict,
     model_name: str,
     model_version: str,
-    min_regression_time: float,
-    max_regression_time: float,
     mlflow_client: MlflowClient,
     logger: Logger,
 ):
@@ -135,6 +135,8 @@ def regression_predict(
         expected_time = float(y_pred_new[0])
         # Convert this value into a value between (0,1) range.
         # If expected_time < min_regression_time this value is a very good value.
+        min_regression_time = input_data[provider][DF_MIN_DEP_TIME]
+        max_regression_time = input_data[provider][DF_MAX_DEP_TIME]
         if max_regression_time > 0:
             regression_value = 1 - (expected_time - min_regression_time) / (
                 max_regression_time - min_regression_time
@@ -177,8 +179,6 @@ def predict(
             input_data=input_inference,
             model_name=settings.REGRESSION_MODEL_NAME,
             model_version=settings.REGRESSION_MODEL_VERSION,
-            min_regression_time=settings.REGRESSION_MIN_TIME,
-            max_regression_time=settings.REGRESSION_MAX_TIME,
             mlflow_client=mlflow_client,
             logger=logger,
         )
@@ -272,6 +272,8 @@ def pre_process_message(
         avg_success_time = 0.0
         avg_failure_time = 0.0
         failure_percentage = 0.0
+        min_time = 0.0
+        max_time = 0.0
         if not df.empty:
             df = df[
                 (df[MSG_TEMPLATE_NAME] == row[MSG_TEMPLATE_NAME])
@@ -282,6 +284,8 @@ def pre_process_message(
             avg_success_time = float(df.loc[idx_latest, DF_AVG_SUCCESS_TIME])
             avg_failure_time = float(df.loc[idx_latest, DF_AVG_FAIL_TIME])
             failure_percentage = float(df.loc[idx_latest, DF_FAIL_PERC])
+            min_time = float(df.loc[idx_latest, DF_MIN_DEP_TIME])
+            max_time = float(df.loc[idx_latest, DF_MAX_DEP_TIME])
         else:
             logger.info("No historical data about this kind of requests")
 
@@ -293,6 +297,8 @@ def pre_process_message(
             K_RES_EXACT: row[MSG_INSTANCES_WITH_EXACT_FLAVORS] / row[MSG_INSTANCE_REQ]
             if row[MSG_INSTANCE_REQ] > 0
             else 0,
+            DF_MAX_DEP_TIME: max_time,
+            DF_MIN_DEP_TIME: min_time,
         }
         logger.debug(
             "The following data has been requested on provider '%s' on region '%s': %s",

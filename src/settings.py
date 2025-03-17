@@ -1,17 +1,10 @@
 from logging import Logger
 from typing import Any
 
-from pydantic import (
-    AnyHttpUrl,
-    Field,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
-from typing_extensions import Self
 
 
 class MLFlowSettings(BaseSettings):
@@ -198,12 +191,6 @@ class InferenceSettings(CommonSettings):
     REGRESSION_MODEL_VERSION: str = Field(
         default="latest", description="Version of regression model"
     )
-    REGRESSION_MIN_TIME: float = Field(
-        default=0.0, ge=0.0, description="Minimum regression time (s)"
-    )
-    REGRESSION_MAX_TIME: float = Field(
-        default=5000.0, gt=0.0, description="Maximim regression time (s)"
-    )
 
     LOCAL_IN_MESSAGES: str | None = Field(
         default=None, description="Name of the local input messages."
@@ -211,7 +198,7 @@ class InferenceSettings(CommonSettings):
     LOCAL_OUT_MESSAGES: str | None = Field(
         default=None, description="Name of the local outuput messages."
     )
-    FILTER: bool = Field(default=False, description="Filter results undert threshold")
+    FILTER: bool = Field(default=False, description="Filter results under threshold")
     THRESHOLD: float = Field(default=0.7, description="Threshold to filter out score")
     EXACT_RESOURCES_PRECEDENCE: bool = Field(
         default=True,
@@ -252,13 +239,6 @@ class InferenceSettings(CommonSettings):
         ge=0,
         description="Number of milliseconds to wait when reading published messages",
     )
-
-    @model_validator(mode="after")
-    def greater_then_min(self) -> Self:
-        assert self.REGRESSION_MAX_TIME > self.REGRESSION_MIN_TIME, (
-            "Max regression time must be greater than min regression time"
-        )
-        return self
 
 
 def load_training_settings(logger: Logger) -> TrainingSettings:

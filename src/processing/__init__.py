@@ -58,7 +58,8 @@ DF_TIMESTAMP = "timestamp"
 DF_FAIL_PERC = "failure_percentage"
 DF_AVG_SUCCESS_TIME = "avg_success_time"
 DF_AVG_FAIL_TIME = "avg_failure_time"
-
+DF_MAX_DEP_TIME = "max_success_time"
+DF_MIN_DEP_TIME = "min_success_time"
 
 STATUS_CREATE_COMPLETED = "CREATE_COMPLETED"
 STATUS_CREATE_FAILED = "CREATE_FAILED"
@@ -170,6 +171,18 @@ def preprocessing(
         ),
         axis=1,
     )
+    df[DF_MIN_DEP_TIME] = df.apply(
+        lambda row: calculate_min_success_time(
+            grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
+        ),
+        axis=1,
+    )
+    df[DF_MAX_DEP_TIME] = df.apply(
+        lambda row: calculate_max_success_time(
+            grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
+        ),
+        axis=1,
+    )
 
     logger.debug("Final dataframe: %s", df)
     logger.info("Pre-process completed")
@@ -205,3 +218,29 @@ def calculate_avg_failure_time(group: pd.DataFrame, row: pd.Series) -> float:
     )
     filtered_group = group[mask]
     return filtered_group[DF_DEP_TIME].mean() if not filtered_group.empty else 0.0
+
+
+def calculate_max_success_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate maximum success time"""
+    mask = (
+        (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
+        & (group[DF_STATUS] == 0)
+    )
+    filtered_group = group[mask]
+    return filtered_group[DF_DEP_TIME].max() if not filtered_group.empty else 0.0
+
+
+def calculate_min_success_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate minimum success time.
+
+    A valid minimum success time must be greater than 0.
+    """
+    mask = (
+        (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
+        & (group[DF_STATUS] == 0)
+        & (group[MSG_DEP_COMPLETION_TIME] > 0)
+    )
+    filtered_group = group[mask]
+    return filtered_group[DF_DEP_TIME].min() if not filtered_group.empty else 0.0
