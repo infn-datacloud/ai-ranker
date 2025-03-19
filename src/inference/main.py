@@ -470,7 +470,7 @@ def run(logger: Logger) -> None:
             except AssertionError as e:
                 aborted = True
                 logger.error(e)
-        else:
+        elif len(data["providers"]) == 1:
             logger.info("Only one provider. No inference needed")
             el = data["providers"][0]
             provider = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
@@ -486,6 +486,9 @@ def run(logger: Logger) -> None:
                     **el,
                 }
             }
+        else:
+            aborted = True
+            logger.info("No 'providers' available for this request")
 
         if aborted:
             logger.error("Inference process aborted")
