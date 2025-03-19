@@ -29,6 +29,7 @@ from utils import (
     MSG_REGION_NAME,
     MSG_TEMPLATE_NAME,
     MSG_VALID_KEYS,
+    MSG_VERSION,
     load_data_from_file,
     write_data_to_file,
 )
@@ -259,10 +260,17 @@ def pre_process_message(
     provider situation inferred from the stored data.
     """
     data = {}
+    msg_version = message.pop(MSG_VERSION)
+    msg_map = MSG_VALID_KEYS.get(msg_version, None)
+    if msg_map is None:
+        raise ValueError(f"Message version {msg_version} not supported")
+
+    for request in message["providers"]:
+        invalid_keys = set(request.keys()).difference(msg_map)
+        assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+
     df_msg = pd.DataFrame(message["providers"])
     df_msg[MSG_TEMPLATE_NAME] = message[MSG_TEMPLATE_NAME]
-    invalid_keys = set(df_msg.columns).difference(MSG_VALID_KEYS)
-    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
     df_msg = calculate_derived_properties(
         df=df_msg, complex_templates=complex_templates
     )
@@ -428,6 +436,7 @@ def run(logger: Logger) -> None:
                 df = load_training_data(
                     local_mode=settings.LOCAL_MODE,
                     local_dataset=settings.LOCAL_DATASET,
+                    local_dataset_version=settings.LOCAL_DATASET_VERSION,
                     kafka_server_url=settings.KAFKA_HOSTNAME,
                     kafka_topic=settings.KAFKA_TRAINING_TOPIC,
                     kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
@@ -468,6 +477,9 @@ def run(logger: Logger) -> None:
                     "Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME
                 )
             except AssertionError as e:
+                aborted = True
+                logger.error(e)
+            except ValueError as e:
                 aborted = True
                 logger.error(e)
         elif len(data["providers"]) == 1:

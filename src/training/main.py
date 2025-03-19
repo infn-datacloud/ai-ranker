@@ -391,6 +391,7 @@ def load_training_data(
     *,
     local_mode: bool = False,
     local_dataset: str | None = None,
+    local_dataset_version: str = "1.1.0",
     kafka_server_url: str | None = None,
     kafka_topic: str | None = None,
     kafka_topic_partition: int = 0,
@@ -402,7 +403,11 @@ def load_training_data(
     logger.info("Upload training data")
     if local_mode:
         if local_dataset:
-            return load_local_dataset(filename=local_dataset, logger=logger)
+            return load_local_dataset(
+                filename=local_dataset,
+                dataset_version=local_dataset_version,
+                logger=logger,
+            )
         raise ValueError("LOCAL_DATASET environment variable has not been set.")
     consumer = create_kafka_consumer(
         kafka_server_url=kafka_server_url,
@@ -430,6 +435,7 @@ def run(logger: Logger) -> None:
         df = load_training_data(
             local_mode=settings.LOCAL_MODE,
             local_dataset=settings.LOCAL_DATASET,
+            local_dataset_version=settings.LOCAL_DATASET_VERSION,
             kafka_server_url=settings.KAFKA_HOSTNAME,
             kafka_topic=settings.KAFKA_TRAINING_TOPIC,
             kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,

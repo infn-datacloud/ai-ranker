@@ -46,7 +46,11 @@ class CommonSettings(BaseSettings):
         default=False, description="Perform the training using local dataset"
     )
     LOCAL_DATASET: str | None = Field(
-        default=None, description="Name of the local dataset."
+        default=None, description="Name of the file with the local dataset."
+    )
+    LOCAL_DATASET_VERSION: str = Field(
+        default="1.1.0",
+        description="Dataset's data were build following the target message version.",
     )
 
     KAFKA_HOSTNAME: str = Field(
