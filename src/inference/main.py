@@ -1,406 +1,514 @@
-import ast
-import base64
-import json
-import os
-import pickle
 import time
 from logging import Logger
+from typing import Any
 
-import mlflow
-import mlflow.sklearn
 import pandas as pd
 from kafka import KafkaConsumer
+from kafka.errors import NoBrokersAvailable
+from mlflow import MlflowClient
+from sklearn.preprocessing import RobustScaler
 
 from processing import (
     DF_AVG_FAIL_TIME,
     DF_AVG_SUCCESS_TIME,
-    DF_COMPLEX,
-    DF_CPU_DIFF,
-    DF_DISK_DIFF,
     DF_FAIL_PERC,
-    DF_GPU,
-    DF_INSTANCE_DIFF,
+    DF_MAX_DEP_TIME,
+    DF_MIN_DEP_TIME,
     DF_PROVIDER,
-    DF_PUB_IPS_DIFF,
-    DF_RAM_DIFF,
-    MSG_CPU_QUOTA,
-    MSG_CPU_REQ,
-    MSG_CPU_USAGE,
-    MSG_DISK_QUOTA,
-    MSG_DISK_REQ,
-    MSG_DISK_USAGE,
-    MSG_GPU_REQ,
-    MSG_INSTANCE_QUOTA,
-    MSG_INSTANCE_REQ,
-    MSG_INSTANCE_USAGE,
-    MSG_PROVIDER_NAME,
-    MSG_PUB_IPS_QUOTA,
-    MSG_PUB_IPS_REQ,
-    MSG_PUB_IPS_USAGE,
-    MSG_RAM_QUOTA,
-    MSG_RAM_REQ,
-    MSG_RAM_USAGE,
-    MSG_REGION_NAME,
-    MSG_TEMPLATE_NAME,
-    load_dataset,
+    DF_TIMESTAMP,
+    calculate_derived_properties,
     preprocessing,
 )
-from settings import load_inference_settings, setup_mlflow
+from settings import InferenceSettings, load_inference_settings
+from training.main import load_training_data
+from utils import (
+    MSG_DEP_UUID,
+    MSG_INSTANCE_REQ,
+    MSG_INSTANCES_WITH_EXACT_FLAVORS,
+    MSG_PROVIDER_NAME,
+    MSG_REGION_NAME,
+    MSG_TEMPLATE_NAME,
+    MSG_VALID_KEYS,
+    MSG_VERSION,
+    load_data_from_file,
+    write_data_to_file,
+)
+from utils.kafka import create_kafka_consumer, create_kafka_producer
+from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
+
+CLASSIFICATION_SUCCESS_IDX = 0
+NO_PREDICTED_VALUE = -1
+K_RES_EXACT = "resource_exactness"
+K_CLASS = "classification"
+K_REGR = "regression"
 
 
-def processMessage(
-    message: dict, input_list: list, template_complex_types: list, settings, logger
-):
-    input_message = {}
-    exact_flavors_dict = {}
-    message_providers = message["providers"]
-    template_name = message[MSG_TEMPLATE_NAME]
-    complexity = 0
-    if template_name in template_complex_types:
-        complexity = 1
-    df = load_dataset(settings=settings, logger=logger)
+def create_inference_input(
+    *, data: dict, model: Any, scaler: RobustScaler | None
+) -> pd.DataFrame:
+    """From received dict create the dataframe to send to inference.
 
-    df = preprocessing(
-        df=df,
-        complex_templates=template_complex_types,
-        logger=logger,
-    )
-    for el in message_providers:
-        provider = el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
-        df_filtered = df[
-            (df[MSG_TEMPLATE_NAME].isin([template_name]))
-            & (df[DF_PROVIDER].isin([provider]))
-        ]
-        df_filtered = df_filtered.copy()
-        avg_success_time = (
-            float(
-                df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_AVG_SUCCESS_TIME]
-            )
-            if not df_filtered.empty
-            else 0.0
+    Filter features.
+    """
+    input_features = model.feature_names_in_
+    values = [[data[k] for k in input_features if k in data]]
+    x_new = pd.DataFrame(values, columns=input_features)
+    if scaler is not None:
+        return pd.DataFrame(
+            scaler.transform(x_new), columns=x_new.columns, index=x_new.index
         )
-        avg_failure_time = (
-            float(df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_AVG_FAIL_TIME])
-            if not df_filtered.empty
-            else 0.0
-        )
-        failure_percentage = (
-            float(df_filtered.loc[df_filtered["timestamp"].idxmax(), DF_FAIL_PERC])
-            if not df_filtered.empty
-            else 0.0
-        )
-        calculated_values = {
-            DF_CPU_DIFF: (el[MSG_CPU_QUOTA] - el[MSG_CPU_REQ]) - el[MSG_CPU_USAGE],
-            DF_RAM_DIFF: (el[MSG_RAM_QUOTA] - el[MSG_RAM_REQ]) - el[MSG_RAM_USAGE],
-            DF_DISK_DIFF: (el[MSG_DISK_QUOTA] - el[MSG_DISK_REQ]) - el[MSG_DISK_USAGE],
-            DF_INSTANCE_DIFF: (el[MSG_INSTANCE_QUOTA] - el[MSG_INSTANCE_REQ])
-            - el[MSG_INSTANCE_USAGE],
-            DF_PUB_IPS_DIFF: (el[MSG_PUB_IPS_QUOTA] - el[MSG_PUB_IPS_REQ])
-            - el[MSG_PUB_IPS_USAGE],
-            DF_GPU: float(bool(el[MSG_GPU_REQ])),
-            "test_failure_perc_30d": el["test_failure_perc_30d"],
-            "test_failure_perc_7d": el["test_failure_perc_7d"],
-            "test_failure_perc_1d": el["test_failure_perc_1d"],
-            DF_COMPLEX: complexity,
-            "overbooking_ram": el["overbooking_ram"],
-            "overbooking_cpu": el["overbooking_cpu"],
-            DF_AVG_SUCCESS_TIME: avg_success_time,
-            DF_AVG_FAIL_TIME: avg_failure_time,
-            DF_FAIL_PERC: failure_percentage,
-        }
-        exact_flavors_dict[provider] = 1.0 - float(
-            bool(el[MSG_INSTANCE_REQ] - el["exact_flavors"])
-        )
-        input_message[provider] = [
-            calculated_values[key] for key in input_list if key in calculated_values
-        ]
-    return input_message, exact_flavors_dict
+    return x_new
 
 
 def classification_predict(
-    inputData: dict,
-    feature_input: list,
+    *,
+    input_data: dict,
     model_name: str,
     model_version: str,
-    scaling_enable: bool,
-    scaler_file: str,
+    mlflow_client: MlflowClient,
+    logger: Logger,
 ):
-    model_uri = f"models:/{model_name}/{model_version}"
+    """Load model and predict result.
+
+    TODO: ...
+    """
+    # Load model and scaler
+    logger.info("Load model from MLFlow.")
+    model_uri = get_model_uri(
+        mlflow_client, model_name=model_name, model_version=model_version
+    )
+    mlflow_model, sklearn_model = get_model(model_uri=model_uri)
+    scaler = None
+    if mlflow_model.metadata.metadata["scaling"]:
+        logger.info("Load scaler from MLFlow.")
+        scaler = get_scaler(
+            model_uri=model_uri,
+            scaler_file=mlflow_model.metadata.metadata["scaler_file"],
+        )
+
+    # Calculate success probability for each provider
     classification_values = {}
-    try:
-        # Get the model type and load it with the proper function
-        model = mlflow.pyfunc.load_model(model_uri)
-        model_type = model.metadata.flavors.keys()
-        if "sklearn" in model_type:
-            model = mlflow.sklearn.load_model(model_uri)
-        else:
-            raise ValueError("Model type not supported")
-
-        # Load model scaler if scaling is enabled
-        if scaling_enable:
-            scaler_uri = f"{model_uri}/{scaler_file}"
-            scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
-            scaler_bytes = base64.b64decode(scaler_dict["scaler"])
-            scaler = pickle.loads(scaler_bytes)
-        for key, data in inputData.items():
-            X_new = pd.DataFrame([data], columns=feature_input)
-            # scale x_new if scaling is enabled
-            if scaling_enable:
-                X_new_scaled = pd.DataFrame(scaler.transform(X_new), columns=X_new.columns, index=X_new.index)
-            else:
-                X_new_scaled = X_new
-            y_pred_new = model.predict_proba(X_new_scaled)
-            classification_response = y_pred_new.tolist()
-            success_prob = classification_response[0][0]
-            classification_values[key] = success_prob
-        return classification_values
-
-    except Exception as e:
-        raise RuntimeError(f"Error: {str(e)}")
+    for provider, data in input_data.items():
+        x_new = create_inference_input(data=data, model=sklearn_model, scaler=scaler)
+        logger.info("Predict success probability for '%s'", provider)
+        y_pred_new = sklearn_model.predict_proba(x_new)
+        success_prob = float(y_pred_new[0][CLASSIFICATION_SUCCESS_IDX])
+        logger.debug(
+            "Predicted success probability for '%s': %.2f", provider, success_prob
+        )
+        # Keep only success probability
+        classification_values[provider] = success_prob
+    return classification_values
 
 
 def regression_predict(
-    inputData: dict,
-    feature_input: list,
+    *,
+    input_data: dict,
     model_name: str,
     model_version: str,
-    max_regression_time,
-    min_regression_time,
-    scaling_enable: str,
-    scaler_file: str,
+    mlflow_client: MlflowClient,
+    logger: Logger,
 ):
-    model_uri = f"models:/{model_name}/{model_version}"
+    """Load model and predict result.
+
+    TODO: ...
+    """
+    # Load model and scaler
+    logger.info("Load model from MLFlow.")
+    model_uri = get_model_uri(
+        mlflow_client, model_name=model_name, model_version=model_version
+    )
+    mlflow_model, sklearn_model = get_model(model_uri=model_uri)
+    scaler = None
+    if mlflow_model.metadata.metadata["scaling"]:
+        logger.info("Load scaler from MLFlow.")
+        scaler = get_scaler(
+            model_uri=model_uri,
+            scaler_file=mlflow_model.metadata.metadata["scaler_file"],
+        )
+
+    # Calculate expected time for each provider
     regression_values = {}
-    try:
-        # Get the model type and load it with the proper function
-        model = mlflow.pyfunc.load_model(model_uri)
-        model_type = model.metadata.flavors.keys()
-
-        if "sklearn" in model_type:
-            model = mlflow.sklearn.load_model(model_uri)
-
-        else:
-            raise ValueError("Model type not supported")
-
-        # Load model scaler if scaling is enabled
-        if scaling_enable:
-            scaler_uri = f"{model_uri}/{scaler_file}"
-            scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
-            scaler_bytes = base64.b64decode(scaler_dict["scaler"])
-            scaler = pickle.loads(scaler_bytes)
-        for key, data in inputData.items():
-            X_new = pd.DataFrame([data], columns=feature_input)
-            # scale x_new if scaling is enabled
-            if scaling_enable:
-                X_new_scaled = pd.DataFrame(scaler.transform(X_new), columns=X_new.columns, index=X_new.index)
-            else:
-                X_new_scaled = X_new
-            y_pred_new = model.predict(X_new_scaled)
-            regression_response = y_pred_new.tolist()
-            regression_value_raw = regression_response[0]
-            regression_value = 1 - (regression_value_raw - min_regression_time) / (
+    for provider, data in input_data.items():
+        x_new = create_inference_input(data=data, model=sklearn_model, scaler=scaler)
+        logger.info("Predict time for '%s'", provider)
+        y_pred_new = sklearn_model.predict(x_new)
+        expected_time = float(y_pred_new[0])
+        # Convert this value into a value between (0,1) range.
+        # If expected_time < min_regression_time this value is a very good value.
+        min_regression_time = input_data[provider][DF_MIN_DEP_TIME]
+        max_regression_time = input_data[provider][DF_MAX_DEP_TIME]
+        if max_regression_time > 0:
+            regression_value = 1 - (expected_time - min_regression_time) / (
                 max_regression_time - min_regression_time
             )
-            regression_values[key] = regression_value
-        return regression_values
+        else:
+            regression_value = 1
 
-    except Exception as e:
-        raise RuntimeError(f"Error: {str(e)}")
+        logger.debug("Predicted time for '%s': %.2f", provider, expected_time)
+        logger.debug("Predicted goodness for '%s': %.2f", provider, expected_time)
+        regression_values[provider] = regression_value
+    return regression_values
 
 
-def process_inference(
+def predict(
+    *,
     input_inference: dict,
-    feature_input: list,
-    exact_flavors_dict: dict,
-    classification_model_name: str,
-    classification_model_version: str,
-    regression_model_name: str,
-    regression_model_version: str,
-    min_regression_time: int,
-    max_regression_time: int,
-    exact_flavour: bool,
-    scaling_enable: bool,
-    scaler_file: str,
-    classification_weight: float = 0.75,
-    threshold: float = 0.7,
-    filter_on: bool = False,
-) -> dict:
-    results = {}
-    ##### DEFAULT VALUE
-    default_value = 0.1
+    mlflow_client: MlflowClient,
+    settings: InferenceSettings,
+    logger: Logger,
+) -> tuple[dict, dict]:
+    """Predict classification and regression on all input data"""
+    start_time = time.time()
 
+    # Send requests to classification and regression endpoints
     try:
-        # Send requests to classification and regression endpoints
         classification_response = classification_predict(
-            inputData=input_inference,
-            feature_input=feature_input,
-            model_name=classification_model_name,
-            model_version=classification_model_version,
-            scaling_enable=scaling_enable,
-            scaler_file=scaler_file,
+            input_data=input_inference,
+            model_name=settings.CLASSIFICATION_MODEL_NAME,
+            model_version=settings.CLASSIFICATION_MODEL_VERSION,
+            mlflow_client=mlflow_client,
+            logger=logger,
         )
-        regression_response = regression_predict(
-            inputData=input_inference,
-            feature_input=feature_input,
-            model_name=regression_model_name,
-            model_version=regression_model_version,
-            min_regression_time=min_regression_time,
-            max_regression_time=max_regression_time,
-            scaling_enable=scaling_enable,
-            scaler_file=scaler_file,
-        )
-
-        for key, value in classification_response.items():
-            results[key] = value * classification_weight + regression_response[key] * (
-                1 - classification_weight
-            )
-
-    except (KeyError, IndexError, TypeError) as e:
-        print(f"Unexpected response structure for {key}: {e}")
-        ##### DEFAULT VALUE
-        results[key] = default_value  # Default value for unexpected responses
-    sorted_results = dict(
-        sorted(results.items(), key=lambda item: item[1], reverse=True)
-    )
-    # print("prima:\n ",json.dumps(sorted_results, indent=4))
-    # print(json.dumps(input_inference, indent=4))
-    # Filter results based on the threshold
-    if exact_flavour:
-        exact = [k for k in input_inference if exact_flavors_dict[k] == 1.0]
-        no_exact = [k for k in input_inference if exact_flavors_dict[k] == 0.0]
-
-        exact_sorted = sorted(exact, key=lambda k: sorted_results[k], reverse=True)
-        no_exact_sorted = sorted(
-            no_exact, key=lambda k: sorted_results[k], reverse=True
-        )
-
-        sorted_keys = exact_sorted + no_exact_sorted
-
-        sorted_results = {k: sorted_results[k] for k in sorted_keys}
-        # print("dopo:\n ",json.dumps(sorted_results, indent=4))
-    if filter_on:
-        sorted_results = {
-            key: value for key, value in results.items() if value >= threshold
+    except ValueError as e:
+        logger.error(e)
+        classification_response = {
+            k: NO_PREDICTED_VALUE for k in input_inference.keys()
         }
+    try:
+        regression_response = regression_predict(
+            input_data=input_inference,
+            model_name=settings.REGRESSION_MODEL_NAME,
+            model_version=settings.REGRESSION_MODEL_VERSION,
+            mlflow_client=mlflow_client,
+            logger=logger,
+        )
+    except ValueError as e:
+        logger.error(e)
+        regression_response = {k: NO_PREDICTED_VALUE for k in input_inference.keys()}
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.debug("Inference Time: %.2f seconds", elapsed_time)
+
+    assert len(classification_response) == len(regression_response), (
+        "Responses length mismatch."
+    )
+    return classification_response, regression_response
+
+
+def sort_key_with_exact_res(item: dict) -> tuple[float, float]:
+    """Sort results by resource exactness and then success probability"""
+    return item[1][K_RES_EXACT], item[1][K_CLASS] + item[1][K_REGR]
+
+
+def sort_key(item: dict) -> float:
+    """Sort results by success probability"""
+    return item[1][K_CLASS] + item[1][K_REGR]
+
+
+def merge_and_sort_results(
+    *,
+    input_inference: dict,
+    classification_response: dict,
+    regression_response: dict,
+    settings: InferenceSettings,
+    logger: Logger,
+):
+    """Merge classification and regression results to sort providers."""
+    results = {}
+    for provider in input_inference.keys():
+        results[provider] = {
+            K_CLASS: classification_response[provider] * settings.CLASSIFICATION_WEIGHT,
+            K_REGR: regression_response[provider]
+            * (1 - settings.CLASSIFICATION_WEIGHT),
+            K_RES_EXACT: input_inference[provider][K_RES_EXACT],
+        }
+    logger.debug("Results: %s", results)
+
+    if settings.FILTER:
+        results = {
+            key: value
+            for key, value in results.items()
+            if value[K_CLASS] + value[K_REGR] >= settings.THRESHOLD
+        }
+        logger.debug(
+            "Results with total succes greater then %.2f: %s",
+            settings.THRESHOLD,
+            results,
+        )
+
+    if settings.EXACT_RESOURCES_PRECEDENCE:
+        sort_func = sort_key_with_exact_res
+    else:
+        sort_func = sort_key
+    sorted_results = dict(sorted(results.items(), key=sort_func, reverse=True))
+    logger.debug("Sorted results: %s", results)
     return sorted_results
 
 
-def get_latest_version(client, model_name: str) -> str:
-    latest_version = max(
-        client.search_model_versions(f"name='{model_name}'"),
-        key=lambda x: int(x.version),
-    ).version
-    return latest_version
+def pre_process_message(
+    *,
+    message: dict[str, Any],
+    df: pd.DataFrame,
+    complex_templates: list[str],
+    logger: Logger,
+) -> dict[str, Any]:
+    """Create a dict with the relevant values calculated from the received message.
 
+    For each provider, create a dict with the user requested values and the current
+    provider situation inferred from the stored data.
+    """
+    data = {}
+    msg_version = message.pop(MSG_VERSION)
+    msg_map = MSG_VALID_KEYS.get(msg_version, None)
+    if msg_map is None:
+        raise ValueError(f"Message version {msg_version} not supported")
 
-def get_features_input(client, model_name: str) -> list:
-    latest_version = get_latest_version(client, model_name)
-    model_uri = f"models:/{model_name}/{latest_version}"
-    model = mlflow.sklearn.load_model(model_uri)
-    feature_names = list(model.feature_names_in_)
-    return feature_names
+    for request in message["providers"]:
+        invalid_keys = set(request.keys()).difference(msg_map)
+        assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
 
-
-def create_message(sorted_results: dict, deployment_uuid: str) -> str:
-    ranked_providers = [
-        {MSG_PROVIDER_NAME: provider, "value": value}
-        for provider, value in sorted_results.items()
-    ]
-    message = {"uuid": deployment_uuid, "ranked_providers": ranked_providers}
-    return json.dumps(message, indent=4)
-
-
-def run(logger: Logger):
-    settings = load_inference_settings(logger=logger)
-    setup_mlflow(logger=logger)
-
-    classification_model_name = settings.CLASSIFICATION_MODEL_NAME
-    classification_model_version = settings.CLASSIFICATION_MODEL_VERSION
-    regression_model_name = settings.REGRESSION_MODEL_NAME
-    regression_model_version = settings.REGRESSION_MODEL_VERSION
-    min_regression_time = settings.REGRESSION_MIN_TIME
-    max_regression_time = settings.REGRESSION_MAX_TIME
-    filter_mode = settings.FILTER
-    threshold = settings.THRESHOLD
-    classification_weight = settings.CLASSIFICATION_WEIGHT
-    exact_flavour = settings.EXACT_FLAVOUR_PRECEDENCE
-    scaler_file = settings.SCALER_FILE
-    scaling_enable = settings.SCALING_ENABLE
-
-    # Create the MLflow client
-    client = mlflow.tracking.MlflowClient()
-    if classification_model_version == "latest":
-        classification_model_version = get_latest_version(
-            client, classification_model_name
-        )
-    if regression_model_version == "latest":
-        regression_model_version = get_latest_version(client, regression_model_name)
-
-    feature_input = get_features_input(client, classification_model_name)
-
-    #### KAFKA SETUP
-
-    kafka_server_url = os.environ.get("KAFKA_HOSTNAME", settings.KAFKA_URL)
-    topic = os.environ.get("KAFKA_TOPIC", "test")
-    template_complex_types = settings.TEMPLATE_COMPLEX_TYPES
-    consumer = KafkaConsumer(
-        topic,
-        bootstrap_servers=kafka_server_url,
-        # auto_offset_reset='earliest'
+    df_msg = pd.DataFrame(message["providers"])
+    df_msg[MSG_TEMPLATE_NAME] = message[MSG_TEMPLATE_NAME]
+    df_msg = calculate_derived_properties(
+        df=df_msg, complex_templates=complex_templates
     )
-    with open("output_messages.txt", "w") as file:
-        pass
+    for _, row in df_msg.iterrows():
+        # Filter historical values related to the target provider and region
+        # and retrieve latest details about success and failure percentage.
+        avg_success_time = 0.0
+        avg_failure_time = 0.0
+        failure_percentage = 0.0
+        min_time = 0.0
+        max_time = 0.0
+        if not df.empty:
+            df = df[
+                (df[MSG_TEMPLATE_NAME] == row[MSG_TEMPLATE_NAME])
+                & (df[DF_PROVIDER] == row[DF_PROVIDER])
+            ]
+        if not df.empty:
+            idx_latest = df[DF_TIMESTAMP].idxmax()
+            avg_success_time = float(df.loc[idx_latest, DF_AVG_SUCCESS_TIME])
+            avg_failure_time = float(df.loc[idx_latest, DF_AVG_FAIL_TIME])
+            failure_percentage = float(df.loc[idx_latest, DF_FAIL_PERC])
+            min_time = float(df.loc[idx_latest, DF_MIN_DEP_TIME])
+            max_time = float(df.loc[idx_latest, DF_MAX_DEP_TIME])
+        else:
+            logger.info("No historical data about this kind of requests")
 
-    if consumer.bootstrap_connected():
-        print("Connected")
-        print(f"Subscribed topics: {consumer.subscription()}")
+        data[row[DF_PROVIDER]] = {
+            **row.to_dict(),
+            DF_AVG_SUCCESS_TIME: avg_success_time,
+            DF_AVG_FAIL_TIME: avg_failure_time,
+            DF_FAIL_PERC: failure_percentage,
+            K_RES_EXACT: row[MSG_INSTANCES_WITH_EXACT_FLAVORS] / row[MSG_INSTANCE_REQ]
+            if row[MSG_INSTANCE_REQ] > 0
+            else 0,
+            DF_MAX_DEP_TIME: max_time,
+            DF_MIN_DEP_TIME: min_time,
+        }
+        logger.debug(
+            "The following data has been requested on provider '%s' on region '%s': %s",
+            row[MSG_PROVIDER_NAME],
+            row[MSG_REGION_NAME],
+            data[row[DF_PROVIDER]],
+        )
 
-        for message in consumer:
-            # print(message)
-            message = message.value.decode("utf-8")  # Decode bytes to a string
-            message = json.loads(message)
-            deployment_uuid = message["uuid"]
-            if len(message["providers"]) != 1:
-                try:
-                    input_dict, exact_flavors_dict = processMessage(
-                        message, feature_input, template_complex_types, settings, logger
-                    )
-                    start_time = time.time()
-                    sorted_results = process_inference(
-                        input_dict,
-                        feature_input,
-                        exact_flavors_dict,
-                        classification_model_name,
-                        classification_model_version,
-                        regression_model_name,
-                        regression_model_version,
-                        min_regression_time=min_regression_time,
-                        max_regression_time=max_regression_time,
-                        exact_flavour=exact_flavour,
-                        classification_weight=classification_weight,
-                        threshold=threshold,
-                        filter_on=filter_mode,
-                        scaling_enable=scaling_enable,
-                        scaler_file=scaler_file,
-                    )
-                    end_time = time.time()
-                    elapsed_time = end_time - start_time
-                    print(f"Inference Time: {elapsed_time:.2f} seconds")
-                except Exception as e:
-                    # Handle exceptions and log them
-                    print(f"Error processing message: {e}")
-                    sorted_results = {}
-                    for el in message["providers"]:
-                        sorted_results[
-                            el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
-                        ] = 0.5
+    return data
+
+
+def create_message(
+    *, sorted_results: dict, input_data: dict, deployment_uuid: str, logger: Logger
+) -> dict[str, Any]:
+    """Create a dict with the deployment uuid and the list of ranked providers."""
+    ranked_providers = []
+    for provider, values in sorted_results.items():
+        for i in input_data:
+            if f"{i[MSG_PROVIDER_NAME]}-{i[MSG_REGION_NAME]}" == provider:
+                data = {**values, **i}
+                break
+        ranked_providers.append(data)
+    message = {MSG_DEP_UUID: deployment_uuid, "ranked_providers": ranked_providers}
+    logger.debug("Output message: %s", message)
+    return message
+
+
+def send_message(message: dict, settings: InferenceSettings, logger: Logger) -> None:
+    """Send message to kafka or write it to file."""
+    if settings.LOCAL_MODE:
+        if settings.LOCAL_OUT_MESSAGES is None:
+            logger.error("LOCAL_OUT_MESSAGES environment variable has not been set.")
+            return
+        write_data_to_file(
+            filename=settings.LOCAL_OUT_MESSAGES, data=message, logger=logger
+        )
+    else:
+        producer = create_kafka_producer(
+            kafka_server_url=settings.KAFKA_HOSTNAME, logger=logger
+        )
+        producer.send(settings.KAFKA_RANKED_PROVIDERS_TOPIC, message)
+        producer.close()
+        logger.info(
+            "Message sent to topic '%s' of kafka server'%s'",
+            settings.KAFKA_RANKED_PROVIDERS_TOPIC,
+            settings.KAFKA_HOSTNAME,
+        )
+
+
+def connect_consumers_or_load_data(
+    settings: InferenceSettings, logger: Logger
+) -> tuple[KafkaConsumer, KafkaConsumer] | tuple[list[dict], list[dict]]:
+    if settings.LOCAL_MODE:
+        if settings.LOCAL_IN_MESSAGES is None:
+            logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
+            exit(1)
+            try:
+                inputs = load_data_from_file(
+                    filename=settings.LOCAL_IN_MESSAGES, logger=logger
+                )
+                outputs = load_data_from_file(
+                    filename=settings.LOCAL_OUT_MESSAGES, logger=logger
+                )
+                return inputs, outputs
+            except FileNotFoundError:
+                logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
+                exit(1)
+    try:
+        input_consumer = create_kafka_consumer(
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            topic=settings.KAFKA_INFERENCE_TOPIC,
+            consumer_timeout_ms=settings.KAFKA_INFERENCE_TOPIC_TIMEOUT,
+            logger=logger,
+        )
+        output_consumer = create_kafka_consumer(
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            topic=settings.KAFKA_RANKED_PROVIDERS_TOPIC,
+            consumer_timeout_ms=settings.KAFKA_RANKED_PROVIDERS_TOPIC_TIMEOUT,
+            logger=logger,
+        )
+        return input_consumer, output_consumer
+    except NoBrokersAvailable:
+        logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
+        exit(1)
+
+
+def run(logger: Logger) -> None:
+    """Function to load the dataset, do preprocessing, load the
+    model from MLFlow and infer the best provider."""
+    # Load the settings and setup MLFlow and create the MLflow client
+    settings = load_inference_settings(logger=logger)
+    client = setup_mlflow(logger=logger)
+    input_consumer, output_consumer = connect_consumers_or_load_data(
+        settings=settings, logger=logger
+    )
+    processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
+
+    # Listen for new messages from the inference topic
+    logger.info("Start listening for new messages")
+    for message in input_consumer:
+        aborted = False
+
+        logger.info("New message received")
+        if not settings.LOCAL_MODE:
+            logger.debug("Message: %s", message)
+            data = message.value
+        else:
+            data = message
+        logger.debug("Message data: %s", data)
+
+        # Skip already processed messages
+        idx = -1
+        try:
+            if len(processed_dep_uuids) > 0:
+                idx = processed_dep_uuids.index(data[MSG_DEP_UUID])
+        except ValueError:
+            pass
+        if idx != -1:
+            logger.info("Already processed message. Skipping")
+            _ = processed_dep_uuids.pop(idx)
+            continue
+
+        # Process new message.
+        if len(data["providers"]) > 1:
+            logger.info("Select between multiple providers")
+            try:
+                df = load_training_data(
+                    local_mode=settings.LOCAL_MODE,
+                    local_dataset=settings.LOCAL_DATASET,
+                    local_dataset_version=settings.LOCAL_DATASET_VERSION,
+                    kafka_server_url=settings.KAFKA_HOSTNAME,
+                    kafka_topic=settings.KAFKA_TRAINING_TOPIC,
+                    kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+                    kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+                    kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+                    logger=logger,
+                )
+                df = preprocessing(
+                    df=df,
+                    complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
+                    logger=logger,
+                )
+                input_data = pre_process_message(
+                    message=data,
+                    df=df,
+                    complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
+                    logger=logger,
+                )
+                classification_prediction, regression_prediction = predict(
+                    input_inference=input_data,
+                    mlflow_client=client,
+                    settings=settings,
+                    logger=logger,
+                )
+                sorted_results = merge_and_sort_results(
+                    input_inference=input_data,
+                    classification_response=classification_prediction,
+                    regression_response=regression_prediction,
+                    settings=settings,
+                    logger=logger,
+                )
+            except FileNotFoundError:
+                aborted = True
+                logger.error("File '%s' not found", settings.LOCAL_DATASET)
+            except NoBrokersAvailable:
+                aborted = True
+                logger.error(
+                    "Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME
+                )
+            except AssertionError as e:
+                aborted = True
+                logger.error(e)
+            except ValueError as e:
+                aborted = True
+                logger.error(e)
+        elif len(data["providers"]) == 1:
+            logger.info("Only one provider. No inference needed")
+            el = data["providers"][0]
+            provider = f"{el[MSG_PROVIDER_NAME]}-{el[MSG_REGION_NAME]}"
+            if el[MSG_INSTANCE_REQ] > 0:
+                res_exact = el[MSG_INSTANCES_WITH_EXACT_FLAVORS] / el[MSG_INSTANCE_REQ]
             else:
-                el = message["providers"][0]
-                provider = el[MSG_PROVIDER_NAME] + "-" + el[MSG_REGION_NAME]
-                sorted_results = {provider: 0.5}
-            output_message = create_message(sorted_results, deployment_uuid)
-            with open(
-                "output_messages.txt", "a"
-            ) as file:  # 'a' mode appends without overwriting
-                file.write(output_message)
+                res_exact = 0
+            sorted_results = {
+                provider: {
+                    K_CLASS: NO_PREDICTED_VALUE,
+                    K_REGR: NO_PREDICTED_VALUE,
+                    K_RES_EXACT: res_exact,
+                    **el,
+                }
+            }
+        else:
+            aborted = True
+            logger.info("No 'providers' available for this request")
+
+        if aborted:
+            logger.error("Inference process aborted")
+        else:
+            output_message = create_message(
+                sorted_results=sorted_results,
+                input_data=data["providers"],
+                deployment_uuid=data["uuid"],
+                logger=logger,
+            )
+            send_message(output_message, settings=settings, logger=logger)

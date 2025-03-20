@@ -1,12 +1,47 @@
-import json
 from logging import Logger
 
 import numpy as np
 import pandas as pd
-from kafka import KafkaConsumer, TopicPartition
-from kafka.errors import NoBrokersAvailable
 
-from settings import InferenceSettings, TrainingSettings
+from utils import (
+    MSG_CPU_QUOTA,
+    MSG_CPU_REQ,
+    MSG_CPU_USAGE,
+    MSG_DEP_COMPLETION_TIME,
+    MSG_DEP_FAILED_TIME,
+    MSG_DEP_TOT_FAILURES,
+    MSG_DEP_UUID,
+    MSG_DISK_QUOTA,
+    MSG_DISK_REQ,
+    MSG_DISK_USAGE,
+    MSG_GPU_REQ,
+    MSG_IMAGES,
+    MSG_INSTANCE_QUOTA,
+    MSG_INSTANCE_REQ,
+    MSG_INSTANCE_USAGE,
+    MSG_INSTANCES_WITH_EXACT_FLAVORS,
+    MSG_OVERBOOK_CORES,
+    MSG_OVERBOOK_RAM,
+    MSG_PROVIDER_NAME,
+    MSG_PUB_IPS_QUOTA,
+    MSG_PUB_IPS_REQ,
+    MSG_PUB_IPS_USAGE,
+    MSG_RAM_QUOTA,
+    MSG_RAM_REQ,
+    MSG_RAM_USAGE,
+    MSG_REGION_NAME,
+    MSG_STATUS,
+    MSG_STATUS_REASON,
+    MSG_TEMPLATE_NAME,
+    MSG_TEST_FAIL_PERC_1D,
+    MSG_TEST_FAIL_PERC_7D,
+    MSG_TEST_FAIL_PERC_30D,
+    MSG_TIMESTAMP,
+    MSG_USER_GROUP,
+    MSG_VOL_QUOTA,
+    MSG_VOL_REQ,
+    MSG_VOL_USAGE,
+)
 
 DF_CPU_DIFF = "cpu_diff"
 DF_RAM_DIFF = "ram_diff"
@@ -23,36 +58,10 @@ DF_TIMESTAMP = "timestamp"
 DF_FAIL_PERC = "failure_percentage"
 DF_AVG_SUCCESS_TIME = "avg_success_time"
 DF_AVG_FAIL_TIME = "avg_failure_time"
+DF_MAX_DEP_TIME = "max_success_time"
+DF_MIN_DEP_TIME = "min_success_time"
 
-MSG_CPU_QUOTA = "vcpus_quota"
-MSG_CPU_USAGE = "vcpus_usage"
-MSG_CPU_REQ = "vcpus_requ"
-MSG_RAM_QUOTA = "ram_gb_quota"
-MSG_RAM_USAGE = "ram_gb_usage"
-MSG_RAM_REQ = "ram_gb_requ"
-MSG_DISK_QUOTA = "storage_gb_quota"
-MSG_DISK_USAGE = "storage_gb_usage"
-MSG_DISK_REQ = "storage_gb_requ"
-MSG_INSTANCE_QUOTA = "n_instances_quota"
-MSG_INSTANCE_USAGE = "n_instances_usage"
-MSG_INSTANCE_REQ = "n_instances_requ"
-MSG_VOL_QUOTA = "n_volumes_quota"
-MSG_VOL_USAGE = "n_volumes_usage"
-MSG_VOL_REQ = "n_volumes_requ"
-MSG_PUB_IPS_QUOTA = "floating_ips_quota"
-MSG_PUB_IPS_USAGE = "floating_ips_usage"
-MSG_PUB_IPS_REQ = "floating_ips_requ"
-MSG_GPU_REQ = "gpus_requ"
-MSG_STATUS = "status"
-MSG_TEMPLATE_NAME = "template_name"
-MSG_DEP_COMPLETION_TIME = "completed_time"
-MSG_DEP_FAILED_TIME = "tot_failed_time"
-MSG_DEP_TOT_FAILURES = "n_failures"
-MSG_PROVIDER_NAME = "provider_name"
-MSG_REGION_NAME = "region_name"
-MSG_TIMESTAMP = "timestamp"
-
-STATUS_CREATE_COMPLETED = "CREATE_COMPLETED"
+STATUS_CREATE_COMPLETED = "CREATE_COMPLETE"
 STATUS_CREATE_FAILED = "CREATE_FAILED"
 STATUS_CREATE_COMPLETED_VALUE = 0
 STATUS_CREATE_FAILED_VALUE = 1
@@ -62,69 +71,34 @@ STATUS_MAP = {
 }
 
 
-def load_local_dataset(*, filename: str, logger: Logger) -> pd.DataFrame:
-    """Upload from local file the dataset."""
-    try:
-        df = pd.read_csv(f"{filename}")
-        logger.debug("Uploaded dataframe:")
-        logger.debug(df)
-    except FileNotFoundError:
-        logger.error("File %s not found", filename)
-        exit(1)
-    return df
-
-
-def load_dataset_from_kafka(
-    kafka_server_url: str,
-    topic: str,
-    logger: Logger,
-    *,
-    partition: int = 0,
-    offset: int = 0,
-):
-    """Load from kafka the dataset."""
-    try:
-        consumer = KafkaConsumer(
-            # topic,
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset="earliest",
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # deserializza il JSON
-            consumer_timeout_ms=500,
-        )
-    except NoBrokersAvailable:
-        logger.error("Kakfa Broker not found at given url: %s", kafka_server_url)
-        exit(1)
-
-    tp = TopicPartition(topic, partition)
-    consumer.assign([tp])
-    consumer.seek(tp, offset)
-    l_data = [message.value for message in consumer]
-    df = pd.DataFrame(l_data)
-    logger.debug("Uploaded dataframe:")
-    logger.debug(df)
-    return df
-
-
-def load_dataset(
-    *, settings: TrainingSettings | InferenceSettings, logger: Logger
+def calculate_derived_properties(
+    *, df: pd.DataFrame, complex_templates: list[str]
 ) -> pd.DataFrame:
-    """Load the dataset from a local one or from kafka."""
-    logger.info("Upload training data")
-    if settings.LOCAL_MODE:
-        if settings.LOCAL_DATASET is None:
-            logger.error("LOCAL_DATASET environment variable has not been set.")
-            exit(1)
-        return load_local_dataset(filename=settings.LOCAL_DATASET, logger=logger)
-    return load_dataset_from_kafka(
-        kafka_server_url=str(settings.KAFKA_HOSTNAME),
-        topic=settings.KAFKA_TRAINING_TOPIC,
-        partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
-        offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
-        logger=logger,
-    )
+    """From message inputs, calculate derived properties.
+
+    Concatenate provider and region name.
+    CPU diff: difference between Maximum, used and requested.
+    RAM diff: difference between Maximum, used and requested.
+    Disk diff: difference between Maximum, used and requested.
+    Instances diff: difference between Maximum, used and requested.
+    Volumes diff: difference between Maximum, used and requested.
+    Public IPs diff: difference between Maximum, used and requested.
+    Template complexity depends on the chosen template.
+    """
+    df[DF_PROVIDER] = df[[MSG_PROVIDER_NAME, MSG_REGION_NAME]].agg("-".join, axis=1)
+    df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
+    df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
+    df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
+    df[DF_INSTANCE_DIFF] = (df[MSG_INSTANCE_QUOTA] - df[MSG_INSTANCE_USAGE]) - df[
+        MSG_INSTANCE_REQ
+    ]
+    df[DF_VOL_DIFF] = (df[MSG_VOL_QUOTA] - df[MSG_VOL_USAGE]) - df[MSG_VOL_REQ]
+    df[DF_PUB_IPS_DIFF] = (df[MSG_PUB_IPS_QUOTA] - df[MSG_PUB_IPS_USAGE]) - df[
+        MSG_PUB_IPS_REQ
+    ]
+    df[DF_GPU] = df[MSG_GPU_REQ]
+    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(int)
+    return df
 
 
 def preprocessing(
@@ -151,26 +125,15 @@ def preprocessing(
     """
     logger.info("Pre-process data")
     logger.debug("Initial Dataframe:\n%s", df)
+    if df.empty:
+        logger.warning("Received an empty dataframe")
+        return df
 
-    # Remove NaN values
-    df.dropna(inplace=True)
-    df[DF_CPU_DIFF] = (df[MSG_CPU_QUOTA] - df[MSG_CPU_USAGE]) - df[MSG_CPU_REQ]
-    df[DF_RAM_DIFF] = (df[MSG_RAM_QUOTA] - df[MSG_RAM_USAGE]) - df[MSG_RAM_REQ]
-    df[DF_DISK_DIFF] = (df[MSG_DISK_QUOTA] - df[MSG_DISK_USAGE]) - df[MSG_DISK_REQ]
-    df[DF_INSTANCE_DIFF] = (df[MSG_INSTANCE_QUOTA] - df[MSG_INSTANCE_USAGE]) - df[
-        MSG_INSTANCE_REQ
-    ]
-    df[DF_VOL_DIFF] = (df[MSG_VOL_QUOTA] - df[MSG_VOL_USAGE]) - df[MSG_VOL_REQ]
-    df[DF_PUB_IPS_DIFF] = (df[MSG_PUB_IPS_QUOTA] - df[MSG_PUB_IPS_USAGE]) - df[
-        MSG_PUB_IPS_REQ
-    ]
-    df[DF_GPU] = df[MSG_GPU_REQ]
-    df[DF_COMPLEX] = df[MSG_TEMPLATE_NAME].isin(complex_templates).astype(int)
+    # Map STATUS to integer and Convert df[DF_TIMESTAMP]. This may generate NaN values.
+    # Remove them.
+    df.drop([MSG_DEP_UUID, MSG_STATUS_REASON, MSG_USER_GROUP], axis=1, inplace=True)
     df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
-
-    # Remove rows where the map for df[DF_STATUS] fails
-    df.dropna(subset=[DF_STATUS], inplace=True)
-
+    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
     # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it
     # is the average failure time
     df[DF_DEP_TIME] = np.where(
@@ -182,11 +145,12 @@ def preprocessing(
             np.nan,
         ),
     )
-    df[DF_PROVIDER] = f"{df[MSG_PROVIDER_NAME]}-{df[MSG_REGION_NAME]}"
+    df.dropna(inplace=True)
+    if df.empty:
+        logger.warning("Dropping NaN and None generated an empty dataframe")
+        return df
 
-    # Convert df[DF_TIMESTAMP] and remove rows with NaN values
-    df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
-    df.dropna(subset=[DF_TIMESTAMP], inplace=True)
+    df = calculate_derived_properties(df=df, complex_templates=complex_templates)
 
     # Calculate historical features.
     grouped = df.groupby([DF_PROVIDER, MSG_TEMPLATE_NAME])
@@ -204,6 +168,18 @@ def preprocessing(
     )
     df[DF_AVG_FAIL_TIME] = df.apply(
         lambda row: calculate_avg_failure_time(
+            grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
+        ),
+        axis=1,
+    )
+    df[DF_MIN_DEP_TIME] = df.apply(
+        lambda row: calculate_min_success_time(
+            grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
+        ),
+        axis=1,
+    )
+    df[DF_MAX_DEP_TIME] = df.apply(
+        lambda row: calculate_max_success_time(
             grouped.get_group((row[DF_PROVIDER], row[MSG_TEMPLATE_NAME])), row
         ),
         axis=1,
@@ -243,3 +219,29 @@ def calculate_avg_failure_time(group: pd.DataFrame, row: pd.Series) -> float:
     )
     filtered_group = group[mask]
     return filtered_group[DF_DEP_TIME].mean() if not filtered_group.empty else 0.0
+
+
+def calculate_max_success_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate maximum success time"""
+    mask = (
+        (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
+        & (group[DF_STATUS] == STATUS_CREATE_COMPLETED_VALUE)
+    )
+    filtered_group = group[mask]
+    return filtered_group[DF_DEP_TIME].max() if not filtered_group.empty else 0.0
+
+
+def calculate_min_success_time(group: pd.DataFrame, row: pd.Series) -> float:
+    """Function to calculate minimum success time.
+
+    A valid minimum success time must be greater than 0.
+    """
+    mask = (
+        (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
+        & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
+        & (group[DF_STATUS] == STATUS_CREATE_COMPLETED_VALUE)
+        & (group[MSG_DEP_COMPLETION_TIME] > 0)
+    )
+    filtered_group = group[mask]
+    return filtered_group[DF_DEP_TIME].min() if not filtered_group.empty else 0.0

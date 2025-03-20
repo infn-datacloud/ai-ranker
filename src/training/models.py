@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class MetaData(BaseModel):
@@ -11,6 +12,15 @@ class MetaData(BaseModel):
     features: list[str] = Field(description="Final features")
     features_number: int = Field(description="Number of features")
     remove_outliers: bool = Field(default=False, description="Flag to remove outliers")
+    scaling: bool = Field(default=False, description="Scaling enabled")
+    scaler_file: str | None = Field(default=None, description="Scaler file name")
+
+    @model_validator(mode="before")
+    @classmethod
+    def calc_features_len(cls, data: Any) -> Any:
+        if data.get("features_number", None) is None:
+            data["features_number"] = len(data["features"])
+        return data
 
 
 class ClassificationMetrics(BaseModel):

@@ -1,8 +1,6 @@
 from logging import Logger
 from typing import Any
 
-import mlflow
-import mlflow.environment_variables
 from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
@@ -48,7 +46,11 @@ class CommonSettings(BaseSettings):
         default=False, description="Perform the training using local dataset"
     )
     LOCAL_DATASET: str | None = Field(
-        default=None, description="Name of the local dataset."
+        default=None, description="Name of the file with the local dataset."
+    )
+    LOCAL_DATASET_VERSION: str = Field(
+        default="1.1.0",
+        description="Dataset's data were build following the target message version.",
     )
 
     KAFKA_HOSTNAME: str = Field(
@@ -57,22 +59,22 @@ class CommonSettings(BaseSettings):
     KAFKA_TRAINING_TOPIC: str = Field(
         default="training", description="Kafka default topic."
     )
-    KAFKA_TRAINING_TOPIC_PARTITION: int = Field(
-        default=0, description="Training topic partition assigned to this consumer."
+    KAFKA_TRAINING_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Training topic partition assigned to this consumer.",
     )
     KAFKA_TRAINING_TOPIC_OFFSET: int = Field(
-        default=0, description="Training topic read offset."
+        default=0, ge=0, description="Training topic read offset."
+    )
+    KAFKA_TRAINING_TOPIC_TIMEOUT: int = Field(
+        default=1000,
+        ge=0,
+        description="Number of milliseconds to wait for a new message during iteration",
     )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
         default_factory=list, decription="List of complex template"
-    )
-
-    SCALING_ENABLE: bool = Field(
-        default=False, description="Perform the scaling of X features"
-    )
-    SCALER_FILE: str = Field(
-        default="scaler.pkl", description="Default file where store the scaler"
     )
 
     class Config:
@@ -108,8 +110,19 @@ class TrainingSettings(CommonSettings):
     THRESHOLD_FACTOR: float = Field(
         default=1.5, description="Multiplication factor for outlier threshold"
     )
-    FINAL_FEATURES: list = Field(
-        description="List of final features in the processed Dataset",
+    X_FEATURES: list = Field(description="List of features to use as X")
+    Y_CLASSIFICATION_FEATURES: list = Field(
+        description="List of features to use as Y for classification"
+    )
+    Y_REGRESSION_FEATURES: list = Field(
+        description="List of features to use as Y for regression"
+    )
+
+    SCALING_ENABLE: bool = Field(
+        default=False, description="Perform the scaling of X features"
+    )
+    SCALER_FILE: str = Field(
+        default="scaler.pkl", description="Default file where store the scaler"
     )
 
     @field_validator("CLASSIFICATION_MODELS", mode="before")
@@ -118,7 +131,7 @@ class TrainingSettings(CommonSettings):
         cls, value: dict[str, dict]
     ) -> dict[str, ClassifierMixin]:
         """Verify the classification models"""
-        return validate_models(value, "classifier", ClassifierMixin)
+        return cls.__validate_models(value, "classifier", ClassifierMixin)
 
     @field_validator("REGRESSION_MODELS", mode="before")
     @classmethod
@@ -126,7 +139,41 @@ class TrainingSettings(CommonSettings):
         cls, value: dict[str, dict]
     ) -> dict[str, RegressorMixin]:
         """Verify the regression models"""
-        return validate_models(value, "regressor", RegressorMixin)
+        return cls.__validate_models(value, "regressor", RegressorMixin)
+
+    @classmethod
+    def __validate_models(
+        cls, value: dict[str, dict], model_type: str, model_class: type
+    ) -> dict[str, Any]:
+        """Function to validate classifiers and regressors
+
+        Args:
+            value (dict): Dictionary with models and parameters
+            model_type (str): Model type ("classifier" or "regressor").
+            model_class (type): Class type (ClassifierMixin o RegressorMixin).
+
+        Returns:
+            dict: dictionary where values are the model objects
+        """
+        models_dict = {}
+        estimators = dict(all_estimators(type_filter=model_type))
+
+        for model_name, model_params in value.items():
+            # Get the class of the model
+            model_class = estimators.get(model_name, None)
+
+            if model_class is None:
+                raise ValueError(f"Model {model_name} not found")
+
+            # Verify that the model belongs to the correct class
+            if not issubclass(model_class, model_class):
+                raise TypeError(f"The model {model_name} is not a {model_type} model")
+
+            # Create the model object from the parameters
+            model = model_class(**model_params)
+            models_dict[model_name] = model
+
+        return models_dict
 
 
 class InferenceSettings(CommonSettings):
@@ -136,39 +183,67 @@ class InferenceSettings(CommonSettings):
         default="RandomForestClassifier", description="Name of the classification model"
     )
     CLASSIFICATION_MODEL_VERSION: str = Field(
-        default="10", description="Version of classification model"
+        default="latest", description="Version of classification model"
     )
     CLASSIFICATION_WEIGHT: float = Field(
-        default=0.75, description="Classification weight"
+        default=0.75, gt=0.0, lt=1.0, description="Classification weight"
     )
 
     REGRESSION_MODEL_NAME: str = Field(
         default="RandomForestRegressor", description="Name of the regressor model"
     )
     REGRESSION_MODEL_VERSION: str = Field(
-        default="10", description="Version of regression model"
-    )
-    REGRESSION_MIN_TIME: int = Field(default=500, description="Minimum regression time")
-    REGRESSION_MAX_TIME: int = Field(
-        default=5000, description="Maximim regression time"
+        default="latest", description="Version of regression model"
     )
 
-    FILTER: bool = Field(default=False, description="Filter results undert threshold")
+    LOCAL_IN_MESSAGES: str | None = Field(
+        default=None, description="Name of the local input messages."
+    )
+    LOCAL_OUT_MESSAGES: str | None = Field(
+        default=None, description="Name of the local outuput messages."
+    )
+    FILTER: bool = Field(default=False, description="Filter results under threshold")
     THRESHOLD: float = Field(default=0.7, description="Threshold to filter out score")
-    EXACT_FLAVOUR_PRECEDENCE: bool = Field(
-        default=False,
-        description="Sort providers putting them with exact flavour in front",
+    EXACT_RESOURCES_PRECEDENCE: bool = Field(
+        default=True,
+        description="Sort providers based on how much the provider matches the "
+        "requested resources.",
     )
 
     KAFKA_INFERENCE_TOPIC: str = Field(
         default="inference", description="Kafka default inference topic."
     )
-    KAFKA_INFERENCE_TOPIC_PARTITION: int = Field(
-        default=0, description="Inference topic partition assigned to this consumer."
+    KAFKA_INFERENCE_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Inference topic partition assigned to this consumer.",
     )
     KAFKA_INFERENCE_TOPIC_OFFSET: int = Field(
-        default=0, description="Inference topic read offset."
+        default=0, ge=0, description="Inference topic read offset."
     )
+    KAFKA_INFERENCE_TOPIC_TIMEOUT: int = Field(
+        default=0,
+        ge=0,
+        description="Number of milliseconds to wait for a new message during iteration",
+    )
+
+    KAFKA_RANKED_PROVIDERS_TOPIC: str = Field(
+        default="ranked_providers", description="Kafka default inference topic."
+    )
+    KAFKA_RANKED_PROVIDERS_TOPIC_PARTITION: int | None = Field(
+        default=None,
+        ge=0,
+        description="Inference topic partition assigned to this consumer.",
+    )
+    KAFKA_RANKED_PROVIDERS_TOPIC_OFFSET: int = Field(
+        default=0, ge=0, description="Inference topic read offset."
+    )
+    KAFKA_RANKED_PROVIDERS_TOPIC_TIMEOUT: int = Field(
+        default=1000,
+        ge=0,
+        description="Number of milliseconds to wait when reading published messages",
+    )
+
 
 def load_training_settings(logger: Logger) -> TrainingSettings:
     """Function to load the training settings"""
@@ -195,62 +270,3 @@ def load_mlflow_settings(logger: Logger) -> MLFlowSettings:
     except (ValidationError, SettingsError) as e:
         logger.error(e)
         exit(1)
-
-
-def setup_mlflow(*, logger: Logger) -> None:
-    """Function to set up the mlflow settings"""
-    logger.info("Setting up MLFlow service communication")
-    settings = load_mlflow_settings(logger=logger)
-    try:
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(
-            settings.MLFLOW_HTTP_REQUEST_TIMEOUT
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_MAX_RETRIES.set(
-            settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR
-        )
-        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER.set(
-            settings.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER
-        )
-
-        mlflow.set_tracking_uri(str(settings.MLFLOW_TRACKING_URI))
-        mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-    except mlflow.exceptions.MlflowException as e:
-        logger.error(e.message)
-        exit(1)
-
-
-def validate_models(
-    value: dict[str, dict], model_type: str, model_class: type
-) -> dict[str, Any]:
-    """Function to validate classifiers and regressors
-
-    Args:
-        value (dict): Dictionary with models and parameters
-        model_type (str): Model type ("classifier" or "regressor").
-        model_class (type): Class type (ClassifierMixin o RegressorMixin).
-
-    Returns:
-        dict: dictionary where values are the model objects
-    """
-    models_dict = {}
-    estimators = dict(all_estimators(type_filter=model_type))
-
-    for model_name, model_params in value.items():
-        # Get the class of the model
-        model_class = estimators.get(model_name, None)
-
-        if model_class is None:
-            raise ValueError(f"Model {model_name} not found")
-
-        # Verify that the model belongs to the correct class
-        if not issubclass(model_class, model_class):
-            raise TypeError(f"The model {model_name} is not a {model_type} model")
-
-        # Create the model object from the parameters
-        model = model_class(**model_params)
-        models_dict[model_name] = model
-
-    return models_dict
