@@ -131,6 +131,7 @@ def preprocessing(
 
     # Map STATUS to integer and Convert df[DF_TIMESTAMP]. This may generate NaN values.
     # Remove them.
+    df.drop([MSG_DEP_UUID, MSG_STATUS_REASON, MSG_USER_GROUP], axis=1, inplace=True)
     df[DF_STATUS] = df[MSG_STATUS].map(STATUS_MAP)
     df[DF_TIMESTAMP] = pd.to_datetime(df[MSG_TIMESTAMP], errors="coerce")
     # df[DF_DEP_TIME] is the completion time if the deployment successful otherwise it
