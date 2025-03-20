@@ -1,14 +1,10 @@
-import base64
 import pickle
 from logging import Logger
-from tempfile import NamedTemporaryFile
 
-import mlflow
-import mlflow.environment_variables
-import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
+from kafka.errors import NoBrokersAvailable
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.metrics import (
     accuracy_score,
@@ -25,12 +21,14 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
-from processing import DF_TIMESTAMP, load_dataset, preprocessing
-from settings import TrainingSettings, load_training_settings, setup_mlflow
+from processing import DF_TIMESTAMP, preprocessing
+from settings import TrainingSettings, load_training_settings
 from training.models import ClassificationMetrics, MetaData, RegressionMetrics
+from utils import load_dataset_from_kafka_messages, load_local_dataset
+from utils.kafka import create_kafka_consumer
+from utils.mlflow import log_on_mlflow, setup_mlflow
 
-STATUS_COL = -2
-DEP_TIME_COL = -1
+SEED = 42
 
 
 def remove_outliers_from_dataframe(
@@ -56,7 +54,7 @@ def remove_outliers(
     """Concat X and Y, remove outliers and split X from Y."""
     combined = pd.concat([x, y], axis=1)
     filtered = remove_outliers_from_dataframe(combined, q1=q1, q3=q3, k=k)
-    return filtered.iloc[:, :-1], filtered.iloc[:, -1]
+    return filtered[x.columns], filtered[y.columns]
 
 
 def get_feature_importance(
@@ -193,7 +191,6 @@ def train_model(
     logger: Logger,
 ) -> None:
     """Function to train a generic sklearn ML model"""
-
     # Scale x_train if scaling is enabled
     if scaling_enable:
         scaler = RobustScaler()
@@ -213,7 +210,9 @@ def train_model(
     # Train the model
     logger.info("Training model '%s' with params: %s", model_name, model_params)
     model.fit(x_train_scaled, y_train.values.ravel())
+    logger.info("Model successfully trained")
 
+    logger.info("Computing metrics")
     # Get feature importance
     feature_importance_df = get_feature_importance(
         model, x_train.columns, x_train_scaled, logger
@@ -242,26 +241,20 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
+    logger.info("Metrics computed")
 
-    logger.info("Model successfully trained and metrics computed")
-    logger.info("Logging the model on MLFlow")
-    try:
-        # Log the model on MLFlow
-        log_on_mlflow(
-            model_params,
-            model_name,
-            model,
-            metrics,
-            metadata,
-            feature_importance_df,
-            scaling_enable,
-            scaler_file,
-            scaler_bytes,
-        )
-        logger.info("Model %s successfully logged on MLflow", model_name)
-    except Exception as e:
-        logger.error("Error in logging the model in MLFlow server: %s", e)
-        exit(1)
+    log_on_mlflow(
+        model_params,
+        model_name,
+        model,
+        metrics,
+        metadata,
+        feature_importance_df,
+        scaling_enable,
+        scaler_file,
+        scaler_bytes,
+        logger=logger,
+    )
 
 
 def kfold_cross_validation(
@@ -283,7 +276,7 @@ def kfold_cross_validation(
     y = y_train
 
     # Initialize KFold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=SEED)
 
     # Dictionary to store scores
     mean_scores = {}
@@ -331,71 +324,16 @@ def kfold_cross_validation(
     )
 
 
-def log_on_mlflow(
-    model_params: dict,
-    model_name: str,
-    model: BaseEstimator,
-    metrics: dict,
-    metadata: MetaData,
-    feature_importance_df: pd.DataFrame,
-    scaling_enable,
-    scaler_file: str,
-    scaler_bytes: bytes,
-):
-    """Function to log the model on MLFlow"""
-    # Logging on MLflow
-    with mlflow.start_run():
-        # Log the parameters
-        mlflow.log_params(model_params)
-
-        # Log the metrics
-        for metric, value in metrics.items():
-            mlflow.log_metric(metric, value)
-
-        # Log the sklearn model and register
-        mlflow.sklearn.log_model(
-            signature=False,
-            sk_model=model,
-            artifact_path=model_name,
-            registered_model_name=model_name,
-            metadata=metadata.model_dump(),
-        )
-
-        # Add scaler file as model artifact if scaling is enabled
-        if scaling_enable:
-            scaler_b64 = base64.b64encode(scaler_bytes).decode("utf-8")
-            mlflow.log_dict({"scaler": scaler_b64}, f"{model_name}/{scaler_file}")
-
-        for key, value in metadata.model_dump().items():
-            mlflow.set_tag(key, value)
-
-        with NamedTemporaryFile(
-            delete=True, prefix="feature_importance", suffix=".csv"
-        ) as temp_file:
-            feature_importance_df.to_csv(temp_file.name, index=False)
-            mlflow.log_artifact(temp_file.name, artifact_path="feature_importance")
-
-
 def split_and_clean_data(
-    df: pd.DataFrame,
-    *,
-    start_col_x: int | None = None,
-    end_col_x: int | None = None,
-    start_col_y: int | None = None,
-    end_col_y: int | None = None,
-    settings: TrainingSettings,
+    *, x: pd.DataFrame, y: pd.DataFrame, settings: TrainingSettings
 ):
-    """Divide the dataset in training and test sets and remove outliers if enabled"""
-    if start_col_y is None:
-        start_col_y = end_col_x
+    """Divide the dataset in training and test sets and remove outliers if enabled.
 
+    Remove outliers only from the train set.
+    """
     x_train, x_test, y_train, y_test = train_test_split(
-        df.iloc[:, start_col_x:end_col_x],
-        df.iloc[:, start_col_y:end_col_y],
-        test_size=settings.TEST_SIZE,
-        random_state=42,
+        x, y, test_size=settings.TEST_SIZE, random_state=SEED
     )
-
     if settings.REMOVE_OUTLIERS:
         x_train, y_train = remove_outliers(
             x_train,
@@ -404,7 +342,6 @@ def split_and_clean_data(
             q3=settings.Q3_FACTOR,
             k=settings.THRESHOLD_FACTOR,
         )
-
     return x_train, x_test, y_train, y_test
 
 
@@ -450,6 +387,41 @@ def training_phase(
         )
 
 
+def load_training_data(
+    *,
+    local_mode: bool = False,
+    local_dataset: str | None = None,
+    local_dataset_version: str = "1.1.0",
+    kafka_server_url: str | None = None,
+    kafka_topic: str | None = None,
+    kafka_topic_partition: int = 0,
+    kafka_topic_offset: int = 0,
+    kafka_consumer_timeout_ms: int = 0,
+    logger: Logger,
+) -> pd.DataFrame:
+    """Load the dataset from a local CSV file or from a kafka topic."""
+    logger.info("Upload training data")
+    if local_mode:
+        if local_dataset:
+            return load_local_dataset(
+                filename=local_dataset,
+                dataset_version=local_dataset_version,
+                logger=logger,
+            )
+        raise ValueError("LOCAL_DATASET environment variable has not been set.")
+    consumer = create_kafka_consumer(
+        kafka_server_url=kafka_server_url,
+        topic=kafka_topic,
+        partition=kafka_topic_partition,
+        offset=kafka_topic_offset,
+        consumer_timeout_ms=kafka_consumer_timeout_ms,
+        logger=logger,
+    )
+    df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
+    consumer.close()
+    return df
+
+
 def run(logger: Logger) -> None:
     """Function to load the dataset, do preprocessing, perform training and save the
     model on MLFlow"""
@@ -458,11 +430,28 @@ def run(logger: Logger) -> None:
     settings = load_training_settings(logger=logger)
     setup_mlflow(logger=logger)
 
-    # Load the dataset
-    df = load_dataset(settings=settings, logger=logger)
-    if df.empty:
-        logger.info("Empty DataFrame")
-        return
+    # Load the training dataset
+    try:
+        df = load_training_data(
+            local_mode=settings.LOCAL_MODE,
+            local_dataset=settings.LOCAL_DATASET,
+            local_dataset_version=settings.LOCAL_DATASET_VERSION,
+            kafka_server_url=settings.KAFKA_HOSTNAME,
+            kafka_topic=settings.KAFKA_TRAINING_TOPIC,
+            kafka_topic_partition=settings.KAFKA_TRAINING_TOPIC_PARTITION,
+            kafka_topic_offset=settings.KAFKA_TRAINING_TOPIC_OFFSET,
+            kafka_consumer_timeout_ms=settings.KAFKA_TRAINING_TOPIC_TIMEOUT,
+            logger=logger,
+        )
+    except FileNotFoundError:
+        logger.error("File '%s' not found", settings.LOCAL_DATASET)
+        exit(1)
+    except NoBrokersAvailable:
+        logger.error("Kakfa broker not found at given url: %s", settings.KAFKA_HOSTNAME)
+        exit(1)
+    except AssertionError as e:
+        logger.error(e)
+        exit(1)
 
     # Pre-process data
     df = preprocessing(
@@ -470,21 +459,39 @@ def run(logger: Logger) -> None:
         complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
         logger=logger,
     )
-    metadata = MetaData(
-        start_time=df[DF_TIMESTAMP].max().strftime("%Y-%m-%d %H:%M:%S"),
-        end_time=df[DF_TIMESTAMP].min().strftime("%Y-%m-%d %H:%M:%S"),
-        features=settings.FINAL_FEATURES,
-        features_number=len(settings.FINAL_FEATURES),
-        remove_outliers=settings.REMOVE_OUTLIERS,
-    )
-    df = df[settings.FINAL_FEATURES]
+    if df.empty:
+        logger.warning("No data to pre-process. No model generation.")
+        return
+
+    missing_features = set(
+        settings.X_FEATURES
+        + settings.Y_CLASSIFICATION_FEATURES
+        + settings.Y_REGRESSION_FEATURES
+    ).difference(set(df.columns))
+    if len(missing_features) > 0:
+        logger.error(
+            "Given final features are not present in the training data: %s",
+            missing_features,
+        )
+        exit(1)
+    start_timestamp: pd.Timestamp = df[DF_TIMESTAMP].min()
+    end_timestamp: pd.Timestamp = df[DF_TIMESTAMP].max()
 
     # Classification training phase
     logger.info("Classification phase started")
-    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
-        df, end_col_x=STATUS_COL, end_col_y=DEP_TIME_COL, settings=settings
+    metadata = MetaData(
+        start_time=start_timestamp.isoformat(),
+        end_time=end_timestamp.isoformat(),
+        features=settings.X_FEATURES + settings.Y_CLASSIFICATION_FEATURES,
+        remove_outliers=settings.REMOVE_OUTLIERS,
+        scaling=settings.SCALING_ENABLE,
+        scaler_file=settings.SCALER_FILE,
     )
-
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
+        x=df[settings.X_FEATURES],
+        y=df[settings.Y_CLASSIFICATION_FEATURES],
+        settings=settings,
+    )
     training_phase(
         models=settings.CLASSIFICATION_MODELS,
         x_train=x_train_cleaned,
@@ -499,10 +506,18 @@ def run(logger: Logger) -> None:
 
     # Regression training phase
     logger.info("Regression phase started")
-    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
-        df, end_col_x=STATUS_COL, start_col_y=DEP_TIME_COL, settings=settings
+    metadata = MetaData(
+        start_time=start_timestamp.isoformat(),
+        end_time=end_timestamp.isoformat(),
+        features=settings.X_FEATURES + settings.Y_REGRESSION_FEATURES,
+        remove_outliers=settings.REMOVE_OUTLIERS,
+        scaling=settings.SCALING_ENABLE,
     )
-
+    x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
+        x=df[settings.X_FEATURES],
+        y=df[settings.Y_REGRESSION_FEATURES],
+        settings=settings,
+    )
     training_phase(
         models=settings.REGRESSION_MODELS,
         x_train=x_train_cleaned,
