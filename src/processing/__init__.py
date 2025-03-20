@@ -226,7 +226,7 @@ def calculate_max_success_time(group: pd.DataFrame, row: pd.Series) -> float:
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
         & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
-        & (group[DF_STATUS] == 0)
+        & (group[DF_STATUS] == STATUS_CREATE_COMPLETED_VALUE)
     )
     filtered_group = group[mask]
     return filtered_group[DF_DEP_TIME].max() if not filtered_group.empty else 0.0
@@ -240,7 +240,7 @@ def calculate_min_success_time(group: pd.DataFrame, row: pd.Series) -> float:
     mask = (
         (group[DF_TIMESTAMP] <= row[DF_TIMESTAMP])
         & (group[DF_TIMESTAMP] > row[DF_TIMESTAMP] - pd.Timedelta(days=30))
-        & (group[DF_STATUS] == 0)
+        & (group[DF_STATUS] == STATUS_CREATE_COMPLETED_VALUE)
         & (group[MSG_DEP_COMPLETION_TIME] > 0)
     )
     filtered_group = group[mask]
