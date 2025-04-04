@@ -2,6 +2,7 @@ import time
 from logging import Logger
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
@@ -139,9 +140,10 @@ def regression_predict(
         min_regression_time = input_data[provider][DF_MIN_DEP_TIME]
         max_regression_time = input_data[provider][DF_MAX_DEP_TIME]
         if max_regression_time > 0:
-            regression_value = 1 - (expected_time - min_regression_time) / (
+            raw_val = 1 - (expected_time - min_regression_time) / (
                 max_regression_time - min_regression_time
             )
+            regression_value = float(np.clip(raw_val, 0, 1))
         else:
             regression_value = 1
 
