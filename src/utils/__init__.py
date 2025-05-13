@@ -1,4 +1,5 @@
 import json
+import os
 from logging import Logger
 from typing import Any
 
@@ -94,8 +95,23 @@ MSG_VALID_KEYS = {
 def load_local_dataset(
     *, filename: str, dataset_version: str, logger: Logger
 ) -> pd.DataFrame:
-    """Upload from a local CSV file the dataset."""
-    df = pd.read_csv(f"{filename}")
+    """Load a dataset from a local CSV or JSON file and validate columns."""
+
+    # Detect file extension
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+
+    # Create dataframe based of file type
+    if ext == ".csv":
+        df = pd.read_csv(filename)
+    elif ext == ".json":
+        with open(filename) as f:
+            data = json.load(f)
+        df = pd.DataFrame(data)
+    else:
+        raise ValueError(f"Unsupported file extension: {ext}")
+
+    # Check columns based on dataset version
     msg_map = MSG_VALID_KEYS.get(dataset_version, None)
     if msg_map is None:
         raise ValueError(f"Dataset version {dataset_version} not supported")
