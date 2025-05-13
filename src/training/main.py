@@ -21,12 +21,12 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import RobustScaler
 
-from processing import DF_TIMESTAMP, preprocessing
-from settings import TrainingSettings, load_training_settings
-from training.models import ClassificationMetrics, MetaData, RegressionMetrics
-from utils import load_dataset_from_kafka_messages, load_local_dataset
-from utils.kafka import create_kafka_consumer
-from utils.mlflow import log_on_mlflow, setup_mlflow
+from src.processing import DF_TIMESTAMP, preprocessing
+from src.settings import TrainingSettings, load_training_settings
+from src.training.models import ClassificationMetrics, MetaData, RegressionMetrics
+from src.utils import load_dataset_from_kafka_messages, load_local_dataset
+from src.utils.kafka import create_kafka_consumer
+from src.utils.mlflow import log_on_mlflow, setup_mlflow
 
 SEED = 42
 

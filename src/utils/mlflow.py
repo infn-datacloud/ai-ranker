@@ -12,8 +12,8 @@ from mlflow.pyfunc import PyFuncModel, load_model
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import RobustScaler
 
-from settings import load_mlflow_settings
-from training.models import MetaData
+from src.settings import load_mlflow_settings
+from src.training.models import MetaData
 
 
 def setup_mlflow(*, logger: Logger) -> mlflow.MlflowClient:
