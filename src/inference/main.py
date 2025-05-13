@@ -365,17 +365,17 @@ def connect_consumers_or_load_data(
         if settings.LOCAL_IN_MESSAGES is None:
             logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
             exit(1)
-            try:
-                inputs = load_data_from_file(
-                    filename=settings.LOCAL_IN_MESSAGES, logger=logger
-                )
-                outputs = load_data_from_file(
-                    filename=settings.LOCAL_OUT_MESSAGES, logger=logger
-                )
-                return inputs, outputs
-            except FileNotFoundError:
-                logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
-                exit(1)
+        try:
+            inputs = load_data_from_file(
+                filename=settings.LOCAL_IN_MESSAGES, logger=logger
+            )
+            outputs = load_data_from_file(
+                filename=settings.LOCAL_OUT_MESSAGES, logger=logger
+            )
+            return inputs, outputs
+        except FileNotFoundError:
+            logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
+            exit(1)
     try:
         input_consumer = create_kafka_consumer(
             kafka_server_url=settings.KAFKA_HOSTNAME,
@@ -404,7 +404,10 @@ def run(logger: Logger) -> None:
     input_consumer, output_consumer = connect_consumers_or_load_data(
         settings=settings, logger=logger
     )
-    processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
+    if not settings.LOCAL_MODE:
+        processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
+    else:
+        processed_dep_uuids = [message[MSG_DEP_UUID] for message in output_consumer]
 
     # Listen for new messages from the inference topic
     logger.info("Start listening for new messages")
