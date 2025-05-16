@@ -64,9 +64,21 @@ def get_feature_importance(
     logger: Logger,
 ) -> pd.DataFrame:
     """Calculate feature importance in different ways depending on the model"""
+
+    if x_train_scaled.empty:
+        logger.error("Input data 'x_train_scaled' is empty.")
+        exit(1)
+
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
         feature_importances = model.feature_importances_
+        if len(feature_importances) != len(columns):
+            logger.error(
+                "Length mismatch: feature_importances_ has length %d, but columns has length %d",
+                len(feature_importances),
+                len(columns),
+            )
+            exit(1)
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Importance": feature_importances}
         ).sort_values(by="Importance", ascending=False)
@@ -77,6 +89,15 @@ def get_feature_importance(
     # Case 2: Models like Lasso (coefficient)
     elif hasattr(model, "coef_"):
         coef = model.coef_
+        if coef.ndim > 1:
+            coef = np.mean(np.abs(coef), axis=0)
+        if len(coef) != len(columns):
+            logger.error(
+                "Length mismatch: coef_ has length %d, but columns has length %d",
+                len(coef),
+                len(columns),
+            )
+            exit(1)
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Coefficient": coef}
         ).sort_values(by="Coefficient", ascending=False)
@@ -87,15 +108,20 @@ def get_feature_importance(
     # Case 3: Models without `feature_importances_` or `coef_`, use SHAP
     else:
         try:
-            # If the model is not a tree use KernelExplainer
             background_data_summarized = shap.sample(x_train_scaled[:50])
             explainer = shap.KernelExplainer(
                 model.predict_proba, background_data_summarized
             )
             shap_values = explainer.shap_values(x_train_scaled)
-            shap.summary_plot(shap_values, x_train_scaled)
             # Compute feature importance
             shap_importance = np.mean(np.abs(shap_values), axis=0)[:, 0]
+            if len(shap_importance) != len(columns):
+                logger.error(
+                    "Length mismatch: SHAP importance has length %d, but columns has length %d",
+                    len(shap_importance),
+                    len(columns),
+                )
+                exit(1)
             feature_importance_df = pd.DataFrame(
                 {"Feature": columns, "Importance": shap_importance}
             ).sort_values(by="Importance", ascending=False)
@@ -105,6 +131,7 @@ def get_feature_importance(
         except Exception as e:
             logger.error("Error in using SHAP: %s", e)
             exit(1)
+
 
 
 def calculate_classification_metrics(
