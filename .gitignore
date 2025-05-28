@@ -10,6 +10,7 @@
 .DS_Store
 .env
 mlruns
+**.whl
 
 # Data to ignore. Mounted as volumes
 **/dataset/
