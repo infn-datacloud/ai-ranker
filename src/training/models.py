@@ -27,7 +27,7 @@ class ClassificationMetrics(BaseModel):
     """Metrics stored in the MLFlow model registry."""
 
     accuracy: float = Field(description="Accuracy score on dataset")
-    auc: float = Field(descrption="ROC AUC score on dataset")
+    auc: float = Field(description="ROC AUC score on dataset")
     f1: float = Field(description="F1 score on dataset")
     precision: float = Field(description="Precision score on dataset")
     recall: float = Field(description="Recall score on dataset")

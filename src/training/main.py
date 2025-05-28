@@ -147,6 +147,10 @@ def calculate_classification_metrics(
 ) -> dict[str, float]:
     """Compute Metrics on a Classification Model."""
     logger.info("Calculate classification metrics")
+    if not hasattr(model, "predict_proba"):
+        logger.error("The model %s does not support predict_proba for AUC computation.",
+                     model.__class__.__name__)
+        exit(1)
     train_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_train, y_train_pred),
         auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
@@ -185,17 +189,17 @@ def calculate_regression_metrics(
     """Compute Metrics on a Regression Model."""
     logger.info("Calculate regression metrics")
     train_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_train, y_train_pred),
-        rmse=np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        mae=mean_absolute_error(y_train, y_train_pred),
-        r2=r2_score(y_train, y_train_pred),
+        mse=float(mean_squared_error(y_train, y_train_pred)),
+        rmse=float(np.sqrt(mean_squared_error(y_train, y_train_pred))),
+        mae=float(mean_absolute_error(y_train, y_train_pred)),
+        r2=float(r2_score(y_train, y_train_pred)),
     )
     logger.debug("Train dataset metrics: %s", train_metrics)
     test_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_test, y_test_pred),
-        rmse=np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        mae=mean_absolute_error(y_test, y_test_pred),
-        r2=r2_score(y_test, y_test_pred),
+        mse=float(mean_squared_error(y_test, y_test_pred)),
+        rmse=float(np.sqrt(mean_squared_error(y_test, y_test_pred))),
+        mae=float(mean_absolute_error(y_test, y_test_pred)),
+        r2=float(r2_score(y_test, y_test_pred)),
     )
     logger.debug("Test dataset metrics: %s", test_metrics)
 
