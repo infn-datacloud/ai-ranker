@@ -11,13 +11,21 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 
+from src.settings import TrainingSettings
 from src.training.main import (
     calculate_classification_metrics,
     calculate_regression_metrics,
     get_feature_importance,
     remove_outliers,
     remove_outliers_from_dataframe,
+    split_and_clean_data,
 )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def setup_mlflow_experiment():
+    mlflow.set_tracking_uri("file:///tmp/mlruns")
+    mlflow.set_experiment("TestExperiment")
 
 
 def test_remove_outliers_from_dataframe():
@@ -192,6 +200,131 @@ def test_remove_outliers_combined_column_names_preserved():
     x_clean, y_clean = remove_outliers(x, y)
     assert list(x_clean.columns) == ["feature1"]
     assert list(y_clean.columns) == ["label"]
+
+
+@pytest.fixture
+def sample_data():
+    # 100 righe, alcune con valori anomali
+    x = pd.DataFrame({
+        "feature1": np.concatenate([np.random.normal(50, 5, 95), [500, 600, 700, 800, 900]]),
+        "feature2": np.random.normal(0, 1, 100),
+    })
+    y = pd.DataFrame({
+        "target": np.random.randint(0, 2, size=100)
+    })
+    return x, y
+
+def test_split_without_removing_outliers(sample_data):
+    x, y = sample_data
+    settings = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=False,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+    x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
+
+    assert len(x_train) == 80
+    assert len(x_test) == 20
+    assert len(y_train) == 80
+    assert len(y_test) == 20
+
+def test_split_with_removing_outliers(sample_data):
+    x, y = sample_data
+    settings = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=True,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+    x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
+
+    # Verifica che gli outlier siano stati rimossi dal train set
+    assert len(x_train) < 80
+    assert len(x_test) == 20
+    assert len(y_train) == len(x_train)
+    assert len(y_test) == 20
+
+def test_test_set_unchanged_with_or_without_outliers(sample_data):
+    x, y = sample_data
+
+    settings_no_outliers = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=False,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+
+    settings_with_outliers = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=True,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+
+    _, x_test_no, _, y_test_no = split_and_clean_data(x=x, y=y, settings=settings_no_outliers)
+    _, x_test_yes, _, y_test_yes = split_and_clean_data(x=x, y=y, settings=settings_with_outliers)
+
+    # Il test set deve essere identico
+    pd.testing.assert_frame_equal(x_test_no.reset_index(drop=True), x_test_yes.reset_index(drop=True))
+    pd.testing.assert_frame_equal(y_test_no.reset_index(drop=True), y_test_yes.reset_index(drop=True))
+
+
+@pytest.mark.parametrize("test_size", [0.1, 0.3, 0.5])
+def test_split_respects_test_size(sample_data, test_size):
+    x, y = sample_data
+    settings = TrainingSettings(
+        TEST_SIZE=test_size,
+        REMOVE_OUTLIERS=False,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+    x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
+
+    expected_test_len = int(len(x) * test_size)
+    expected_train_len = len(x) - expected_test_len
+
+    assert len(x_test) == expected_test_len
+    assert len(x_train) == expected_train_len
+    assert len(y_test) == expected_test_len
+    assert len(y_train) == expected_train_len
+
+
+def test_split_with_empty_dataset():
+    x = pd.DataFrame(columns=["feature1", "feature2"])
+    y = pd.DataFrame(columns=["target"])
+
+    settings = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=True,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+
+    with pytest.raises(ValueError):  # train_test_split solleverà un errore
+        split_and_clean_data(x=x, y=y, settings=settings)
+
+
+def test_split_with_single_sample():
+    x = pd.DataFrame({"feature1": [1], "feature2": [2]})
+    y = pd.DataFrame({"target": [0]})
+
+    settings = TrainingSettings(
+        TEST_SIZE=0.2,
+        REMOVE_OUTLIERS=False,
+        Q1_FACTOR=0.25,
+        Q3_FACTOR=0.75,
+        THRESHOLD_FACTOR=1.5
+    )
+
+    with pytest.raises(ValueError):  # Anche qui train_test_split solleva errore
+        split_and_clean_data(x=x, y=y, settings=settings)
 
 
 @pytest.fixture

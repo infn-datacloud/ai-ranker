@@ -57,6 +57,27 @@ def remove_outliers(
     return filtered[x.columns], filtered[y.columns]
 
 
+def split_and_clean_data(
+    *, x: pd.DataFrame, y: pd.DataFrame, settings: TrainingSettings
+):
+    """Divide the dataset in training and test sets and remove outliers if enabled.
+
+    Remove outliers only from the train set.
+    """
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=settings.TEST_SIZE, random_state=SEED
+    )
+    if settings.REMOVE_OUTLIERS:
+        x_train, y_train = remove_outliers(
+            x_train,
+            y_train,
+            q1=settings.Q1_FACTOR,
+            q3=settings.Q3_FACTOR,
+            k=settings.THRESHOLD_FACTOR,
+        )
+    return x_train, x_test, y_train, y_test
+
+
 def get_feature_importance(
     model: BaseEstimator,
     columns: pd.Index,
@@ -353,27 +374,6 @@ def kfold_cross_validation(
         scaler_file=scaler_file,
         logger=logger,
     )
-
-
-def split_and_clean_data(
-    *, x: pd.DataFrame, y: pd.DataFrame, settings: TrainingSettings
-):
-    """Divide the dataset in training and test sets and remove outliers if enabled.
-
-    Remove outliers only from the train set.
-    """
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=settings.TEST_SIZE, random_state=SEED
-    )
-    if settings.REMOVE_OUTLIERS:
-        x_train, y_train = remove_outliers(
-            x_train,
-            y_train,
-            q1=settings.Q1_FACTOR,
-            q3=settings.Q3_FACTOR,
-            k=settings.THRESHOLD_FACTOR,
-        )
-    return x_train, x_test, y_train, y_test
 
 
 def training_phase(
