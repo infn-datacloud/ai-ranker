@@ -156,9 +156,10 @@ def write_data_to_file(
     *, filename: str | None, data: dict[str, Any], logger: Logger
 ) -> None:
     """Write data to file."""
-    # 'a' mode appends without overwriting
     with open(filename, "r+") as file:
         values = json.load(file)
         values.append(data)
+        file.seek(0)
+        file.truncate()
         json.dump(values, file, indent=4)
     logger.info("Message written into %s", filename)
