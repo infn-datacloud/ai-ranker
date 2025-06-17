@@ -126,8 +126,10 @@ def get_model(*, model_uri: str) -> tuple[PyFuncModel, BaseEstimator]:
 
 
 def get_scaler(*, model_uri: str, scaler_file: str) -> RobustScaler:
-    """Return model's scaler"""
+    """Return model's scaler, raises exceptions on failure"""
     scaler_uri = f"{model_uri}/{scaler_file}"
     scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
+    if "scaler" not in scaler_dict:
+        raise KeyError(f"'scaler' key not found in dict loaded from {scaler_uri}")
     scaler_bytes = base64.b64decode(scaler_dict["scaler"])
     return pickle.loads(scaler_bytes)
