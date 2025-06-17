@@ -648,7 +648,7 @@ def test_model_without_predict_proba_should_fail(sample_dataset):
     assert exc_info.value.code == 1
 
 
-def test_mlflow_logging_failure(monkeypatch, sample_dataset):
+def test_mlflow_logging_failure(sample_dataset):
     x_train, x_test, y_train, y_test = sample_dataset
     model = LogisticRegression(solver="liblinear").fit(x_train, y_train)
     y_train_pred = model.predict(x_train)
@@ -669,11 +669,10 @@ def test_mlflow_logging_failure(monkeypatch, sample_dataset):
     def fake_log_metric(*args, **kwargs):
         raise RuntimeError("Simulated MLflow failure")
 
-    monkeypatch.setattr("mlflow.log_metric", fake_log_metric)
-
-    with pytest.raises(RuntimeError, match="Simulated MLflow failure"):
-        for k, v in metrics.items():
-            mlflow.log_metric(k, v)
+    with patch("mlflow.log_metric", new=fake_log_metric):
+        with pytest.raises(RuntimeError, match="Simulated MLflow failure"):
+            for k, v in metrics.items():
+                mlflow.log_metric(k, v)
 
 
 def test_regression_metrics_basic():

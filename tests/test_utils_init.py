@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -36,15 +36,15 @@ def json_file(tmp_path):
 
 # === Test: load_local_dataset ===
 
-def test_load_local_dataset_csv(csv_file, monkeypatch):
-    monkeypatch.setattr("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
+@patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
+def test_load_local_dataset_csv(csv_file):
     logger = MagicMock()
     df = load_local_dataset(filename=csv_file, dataset_version="v1", logger=logger)
     assert not df.empty
     assert list(df.columns) == ["feature1", "feature2"]
 
-def test_load_local_dataset_json(json_file, monkeypatch):
-    monkeypatch.setattr("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
+@patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
+def test_load_local_dataset_json(json_file):
     logger = MagicMock()
     df = load_local_dataset(filename=json_file, dataset_version="v1", logger=logger)
     assert not df.empty
@@ -65,29 +65,25 @@ def test_load_local_dataset_invalid_version(csv_file):
 
 # === Test: load_dataset_from_kafka_messages ===
 
-def test_load_dataset_from_kafka_messages(monkeypatch):
-    monkeypatch.setattr("src.utils.MSG_VERSION", MSG_VERSION)
-    monkeypatch.setattr("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
+def test_load_dataset_from_kafka_messages():
+    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+        consumer = [
+            MagicMock(value={"version": "v1", "feature1": 1, "feature2": 2}),
+            MagicMock(value={"version": "v1", "feature1": 3, "feature2": 4}),
+        ]
+        logger = MagicMock()
+        df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
+        assert not df.empty
+        assert list(df.columns) == ["feature1", "feature2"]
 
-    consumer = [
-        MagicMock(value={"version": "v1", "feature1": 1, "feature2": 2}),
-        MagicMock(value={"version": "v1", "feature1": 3, "feature2": 4}),
-    ]
-    logger = MagicMock()
-    df = load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
-    assert not df.empty
-    assert list(df.columns) == ["feature1", "feature2"]
-
-def test_load_dataset_from_kafka_invalid_keys(monkeypatch):
-    monkeypatch.setattr("src.utils.MSG_VERSION", MSG_VERSION)
-    monkeypatch.setattr("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
-
-    consumer = [
-        MagicMock(value={"version": "v1", "feature1": 1, "invalid_feature": 2}),
-    ]
-    logger = MagicMock()
-    with pytest.raises(AssertionError, match="Found invalid keys"):
-        load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
+def test_load_dataset_from_kafka_invalid_keys():
+    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+        consumer = [
+            MagicMock(value={"version": "v1", "feature1": 1, "invalid_feature": 2}),
+        ]
+        logger = MagicMock()
+        with pytest.raises(AssertionError, match="Found invalid keys"):
+            load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
 
 # === Test: load_data_from_file ===
