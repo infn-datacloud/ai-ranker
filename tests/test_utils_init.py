@@ -85,6 +85,15 @@ def test_load_dataset_from_kafka_invalid_keys():
         with pytest.raises(AssertionError, match="Found invalid keys"):
             load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
+def test_load_dataset_from_kafka_unsupported_version():
+    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+        consumer = [
+            MagicMock(value={"version": "unsupported_version", "feature1": 1, "feature2": 2}),
+        ]
+        logger = MagicMock()
+        with pytest.raises(ValueError, match="Message version unsupported_version not supported"):
+            load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
+
 
 # === Test: load_data_from_file ===
 

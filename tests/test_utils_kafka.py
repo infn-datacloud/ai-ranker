@@ -97,3 +97,38 @@ def test_create_kafka_producer_no_broker(mock_kafka_producer, mock_logger):
     mock_logger.error.assert_called_once_with(
         "Kakfa Broker not found at given url: %s", "localhost:9092"
     )
+
+@patch("src.utils.kafka.KafkaConsumer")
+def test_create_kafka_consumer_with_nonzero_timeout(mock_kafka_consumer, mock_logger):
+    consumer_instance = MagicMock()
+    consumer_instance.bootstrap_connected.return_value = False
+    mock_kafka_consumer.return_value = consumer_instance
+
+    consumer = create_kafka_consumer(
+        kafka_server_url="localhost:9092",
+        topic="topic",
+        consumer_timeout_ms=5000,
+        logger=mock_logger,
+    )
+
+    mock_kafka_consumer.assert_called_once()
+    mock_logger.info.assert_not_called()
+    assert consumer == consumer_instance
+
+@patch("src.utils.kafka.KafkaConsumer")
+def test_create_kafka_consumer_with_nonzero_timeout_other(mock_kafka_consumer, mock_logger):
+    consumer_instance = MagicMock()
+    consumer_instance.bootstrap_connected.return_value = True
+    mock_kafka_consumer.return_value = consumer_instance
+
+    consumer = create_kafka_consumer(
+        kafka_server_url="localhost:9092",
+        topic="topic",
+        consumer_timeout_ms=5000,
+        logger=mock_logger,
+    )
+
+    mock_kafka_consumer.assert_called_once()
+    consumer_instance.bootstrap_connected.assert_called_once()
+    mock_logger.info.assert_called_once()
+    assert consumer == consumer_instance
