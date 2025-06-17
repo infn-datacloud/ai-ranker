@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import mlflow
@@ -19,7 +20,9 @@ from src.training.main import (
     remove_outliers,
     remove_outliers_from_dataframe,
     split_and_clean_data,
+    train_model,
 )
+from src.training.models import MetaData
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -33,7 +36,7 @@ def test_remove_outliers_from_dataframe():
     data = {
         "A": [1, -10, 3, 4, 5, 100],  # Outlier at the end
         "B": [10, 20, 30, 40, 50, 200],  # Outlier at the end
-        "C": [100, 200, 300, 400, 500, 600]  # No outliers in this column
+        "C": [100, 200, 300, 400, 500, 600],  # No outliers in this column
     }
     df = pd.DataFrame(data)
     cleaned_df = remove_outliers_from_dataframe(df)
@@ -47,30 +50,21 @@ def test_remove_outliers_from_dataframe():
 
 def test_remove_outliers_from_dataframe_no_outliers():
     # All values within a reasonable range, no outliers expected
-    df = pd.DataFrame({
-        "A": [10, 12, 14, 16, 18, 20],
-        "B": [5, 7, 9, 11, 13, 15]
-    })
+    df = pd.DataFrame({"A": [10, 12, 14, 16, 18, 20], "B": [5, 7, 9, 11, 13, 15]})
     cleaned_df = remove_outliers_from_dataframe(df)
     pd.testing.assert_frame_equal(cleaned_df, df)
 
 
 def test_remove_outliers_from_dataframe_constant_columns():
     # Columns with constant values should not generate outliers
-    df = pd.DataFrame({
-        "A": [5, 5, 5, 5, 5],
-        "B": [10, 10, 10, 10, 10]
-    })
+    df = pd.DataFrame({"A": [5, 5, 5, 5, 5], "B": [10, 10, 10, 10, 10]})
     cleaned_df = remove_outliers_from_dataframe(df)
     pd.testing.assert_frame_equal(cleaned_df, df)
 
 
 def test_remove_outliers_from_dataframe_single_extreme_value():
     # One extreme value in an otherwise uniform column
-    df = pd.DataFrame({
-        "A": [1, 1, 1, 1, 1000],
-        "B": [2, 2, 2, 2, 2]
-    })
+    df = pd.DataFrame({"A": [1, 1, 1, 1, 1000], "B": [2, 2, 2, 2, 2]})
     cleaned_df = remove_outliers_from_dataframe(df)
     assert len(cleaned_df) == 4
     assert 1000 not in cleaned_df["A"].values
@@ -85,10 +79,7 @@ def test_remove_outliers_from_dataframe_empty():
 
 def test_remove_outliers_from_dataframe_with_nan():
     # NaN rows should be handled correctly (we drop them before passing to the function)
-    df = pd.DataFrame({
-        "A": [1, 2, 3, None, 100],
-        "B": [10, 20, 30, 40, 200]
-    })
+    df = pd.DataFrame({"A": [1, 2, 3, None, 100], "B": [10, 20, 30, 40, 200]})
     df_clean = df.dropna()
     cleaned_df = remove_outliers_from_dataframe(df_clean)
     assert 100 not in cleaned_df["A"].values
@@ -97,9 +88,7 @@ def test_remove_outliers_from_dataframe_with_nan():
 
 def test_remove_outliers_from_dataframe_custom_params():
     # Custom IQR parameters to test different sensitivity to outliers
-    df = pd.DataFrame({
-        "A": [1, 2, 3, 4, 5, 100]
-    })
+    df = pd.DataFrame({"A": [1, 2, 3, 4, 5, 100]})
 
     df_clean_strict = remove_outliers_from_dataframe(df, q1=0.25, q3=0.75, k=1.0)
     assert 100 not in df_clean_strict["A"].values
@@ -122,10 +111,7 @@ def test_remove_outliers_from_dataframe_single_column():
 
 def test_remove_outliers_from_dataframe_negative_positive():
     # Mix of negative and positive values with outliers on both ends
-    df = pd.DataFrame({
-        "A": [-100, -10, 0, 10, 20, 200],
-        "B": [5, 5, 5, 5, 5, 5]
-    })
+    df = pd.DataFrame({"A": [-100, -10, 0, 10, 20, 200], "B": [5, 5, 5, 5, 5, 5]})
     cleaned_df = remove_outliers_from_dataframe(df)
     assert -100 not in cleaned_df["A"].values
     assert 200 not in cleaned_df["A"].values
@@ -134,13 +120,8 @@ def test_remove_outliers_from_dataframe_negative_positive():
 
 def test_remove_outliers_combined_basic():
     # Outliers in both X and Y should be removed together
-    x = pd.DataFrame({
-        "A": [1, 2, 3, 4, 5, 100],
-        "B": [10, 20, 30, 40, 50, 200]
-    })
-    y = pd.DataFrame({
-        "target": [0, 1, 0, 1, 0, 1]
-    })
+    x = pd.DataFrame({"A": [1, 2, 3, 4, 5, 100], "B": [10, 20, 30, 40, 50, 200]})
+    y = pd.DataFrame({"target": [0, 1, 0, 1, 0, 1]})
     x_clean, y_clean = remove_outliers(x, y)
     assert len(x_clean) == 5
     assert 100 not in x_clean["A"].values
@@ -150,13 +131,8 @@ def test_remove_outliers_combined_basic():
 
 def test_remove_outliers_combined_no_outliers():
     # No outliers in either X or Y
-    x = pd.DataFrame({
-        "A": [1, 2, 3, 4, 5],
-        "B": [10, 20, 30, 40, 50]
-    })
-    y = pd.DataFrame({
-        "target": [1, 0, 1, 0, 1]
-    })
+    x = pd.DataFrame({"A": [1, 2, 3, 4, 5], "B": [10, 20, 30, 40, 50]})
+    y = pd.DataFrame({"target": [1, 0, 1, 0, 1]})
     x_clean, y_clean = remove_outliers(x, y)
     pd.testing.assert_frame_equal(x, x_clean)
     pd.testing.assert_frame_equal(y, y_clean)
@@ -164,26 +140,17 @@ def test_remove_outliers_combined_no_outliers():
 
 def test_remove_outliers_combined_outlier_in_y():
     # Outlier only in Y column
-    x = pd.DataFrame({
-        "A": [1, 2, 3, 4, 5]
-    })
-    y = pd.DataFrame({
-        "target": [10, 20, 30, 40, 9999]
-    })
+    x = pd.DataFrame({"A": [1, 2, 3, 4, 5]})
+    y = pd.DataFrame({"target": [10, 20, 30, 40, 9999]})
     x_clean, y_clean = remove_outliers(x, y)
     assert 9999 not in y_clean["target"].values
     assert len(x_clean) == len(y_clean) == 4
 
 
-
 def test_remove_outliers_combined_constant_columns():
     # Constant values in both X and Y, nothing to remove
-    x = pd.DataFrame({
-        "A": [5, 5, 5, 5]
-    })
-    y = pd.DataFrame({
-        "target": [1, 1, 1, 1]
-    })
+    x = pd.DataFrame({"A": [5, 5, 5, 5]})
+    y = pd.DataFrame({"target": [1, 1, 1, 1]})
     x_clean, y_clean = remove_outliers(x, y)
     pd.testing.assert_frame_equal(x, x_clean)
     pd.testing.assert_frame_equal(y, y_clean)
@@ -191,12 +158,8 @@ def test_remove_outliers_combined_constant_columns():
 
 def test_remove_outliers_combined_column_names_preserved():
     # Ensure that column names are preserved after filtering
-    x = pd.DataFrame({
-        "feature1": [1, 2, 3, 4, 100]
-    })
-    y = pd.DataFrame({
-        "label": [0, 1, 0, 1, 1]
-    })
+    x = pd.DataFrame({"feature1": [1, 2, 3, 4, 100]})
+    y = pd.DataFrame({"label": [0, 1, 0, 1, 1]})
     x_clean, y_clean = remove_outliers(x, y)
     assert list(x_clean.columns) == ["feature1"]
     assert list(y_clean.columns) == ["label"]
@@ -205,14 +168,17 @@ def test_remove_outliers_combined_column_names_preserved():
 @pytest.fixture
 def sample_data():
     # 100 righe, alcune con valori anomali
-    x = pd.DataFrame({
-        "feature1": np.concatenate([np.random.normal(50, 5, 95), [500, 600, 700, 800, 900]]),
-        "feature2": np.random.normal(0, 1, 100),
-    })
-    y = pd.DataFrame({
-        "target": np.random.randint(0, 2, size=100)
-    })
+    x = pd.DataFrame(
+        {
+            "feature1": np.concatenate(
+                [np.random.normal(50, 5, 95), [500, 600, 700, 800, 900]]
+            ),
+            "feature2": np.random.normal(0, 1, 100),
+        }
+    )
+    y = pd.DataFrame({"target": np.random.randint(0, 2, size=100)})
     return x, y
+
 
 def test_split_without_removing_outliers(sample_data):
     x, y = sample_data
@@ -221,7 +187,7 @@ def test_split_without_removing_outliers(sample_data):
         REMOVE_OUTLIERS=False,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
     x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
 
@@ -230,6 +196,7 @@ def test_split_without_removing_outliers(sample_data):
     assert len(y_train) == 80
     assert len(y_test) == 20
 
+
 def test_split_with_removing_outliers(sample_data):
     x, y = sample_data
     settings = TrainingSettings(
@@ -237,7 +204,7 @@ def test_split_with_removing_outliers(sample_data):
         REMOVE_OUTLIERS=True,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
     x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
 
@@ -247,6 +214,7 @@ def test_split_with_removing_outliers(sample_data):
     assert len(y_train) == len(x_train)
     assert len(y_test) == 20
 
+
 def test_test_set_unchanged_with_or_without_outliers(sample_data):
     x, y = sample_data
 
@@ -255,7 +223,7 @@ def test_test_set_unchanged_with_or_without_outliers(sample_data):
         REMOVE_OUTLIERS=False,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
 
     settings_with_outliers = TrainingSettings(
@@ -263,15 +231,23 @@ def test_test_set_unchanged_with_or_without_outliers(sample_data):
         REMOVE_OUTLIERS=True,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
 
-    _, x_test_no, _, y_test_no = split_and_clean_data(x=x, y=y, settings=settings_no_outliers)
-    _, x_test_yes, _, y_test_yes = split_and_clean_data(x=x, y=y, settings=settings_with_outliers)
+    _, x_test_no, _, y_test_no = split_and_clean_data(
+        x=x, y=y, settings=settings_no_outliers
+    )
+    _, x_test_yes, _, y_test_yes = split_and_clean_data(
+        x=x, y=y, settings=settings_with_outliers
+    )
 
     # Il test set deve essere identico
-    pd.testing.assert_frame_equal(x_test_no.reset_index(drop=True), x_test_yes.reset_index(drop=True))
-    pd.testing.assert_frame_equal(y_test_no.reset_index(drop=True), y_test_yes.reset_index(drop=True))
+    pd.testing.assert_frame_equal(
+        x_test_no.reset_index(drop=True), x_test_yes.reset_index(drop=True)
+    )
+    pd.testing.assert_frame_equal(
+        y_test_no.reset_index(drop=True), y_test_yes.reset_index(drop=True)
+    )
 
 
 @pytest.mark.parametrize("test_size", [0.1, 0.3, 0.5])
@@ -282,7 +258,7 @@ def test_split_respects_test_size(sample_data, test_size):
         REMOVE_OUTLIERS=False,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
     x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
 
@@ -304,7 +280,7 @@ def test_split_with_empty_dataset():
         REMOVE_OUTLIERS=True,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
 
     with pytest.raises(ValueError):  # train_test_split solleverà un errore
@@ -320,7 +296,7 @@ def test_split_with_single_sample():
         REMOVE_OUTLIERS=False,
         Q1_FACTOR=0.25,
         Q3_FACTOR=0.75,
-        THRESHOLD_FACTOR=1.5
+        THRESHOLD_FACTOR=1.5,
     )
 
     with pytest.raises(ValueError):  # Anche qui train_test_split solleva errore
@@ -334,12 +310,10 @@ def dummy_logger():
     logger.error = MagicMock()
     return logger
 
+
 def test_feature_importance_with_feature_importances(dummy_logger):
     model = RandomForestClassifier(n_estimators=10, random_state=42)
-    X = pd.DataFrame({
-        "f1": [0, 1, 0, 1],
-        "f2": [1, 0, 1, 0]
-    })
+    X = pd.DataFrame({"f1": [0, 1, 0, 1], "f2": [1, 0, 1, 0]})
     y = [0, 1, 0, 1]
     model.fit(X, y)
 
@@ -349,12 +323,10 @@ def test_feature_importance_with_feature_importances(dummy_logger):
     assert len(result) == 2
     assert result.iloc[0]["Importance"] >= result.iloc[1]["Importance"]
 
+
 def test_feature_importance_with_coef(dummy_logger):
     model = LogisticRegression()
-    X = pd.DataFrame({
-        "f1": [0, 1, 0, 1],
-        "f2": [1, 0, 1, 0]
-    })
+    X = pd.DataFrame({"f1": [0, 1, 0, 1], "f2": [1, 0, 1, 0]})
     y = [0, 1, 0, 1]
     model.fit(X, y)
 
@@ -363,6 +335,7 @@ def test_feature_importance_with_coef(dummy_logger):
     assert "Coefficient" in result.columns
     assert len(result) == 2
     assert result.iloc[0]["Coefficient"] >= result.iloc[1]["Coefficient"]
+
 
 @patch("src.training.main.shap.Explainer")
 def test_feature_importance_with_shap(mock_shap, dummy_logger):
@@ -386,6 +359,7 @@ def test_feature_importance_with_shap(mock_shap, dummy_logger):
     assert len(result) == 2
     assert result.iloc[0]["Importance"] >= 0
 
+
 @patch("src.training.main.shap.KernelExplainer")
 def test_feature_importance_shap_failure(mock_kernel_explainer, dummy_logger):
     class DummyModel(BaseEstimator):
@@ -406,10 +380,7 @@ def test_feature_importance_shap_failure(mock_kernel_explainer, dummy_logger):
 
 def test_feature_importance_with_multiclass_coef(dummy_logger):
     model = LogisticRegression(multi_class="ovr")
-    X = pd.DataFrame({
-        "f1": [0, 1, 2, 3],
-        "f2": [1, 0, 1, 0]
-    })
+    X = pd.DataFrame({"f1": [0, 1, 2, 3], "f2": [1, 0, 1, 0]})
     y = [0, 1, 2, 1]
     model.fit(X, y)
 
@@ -467,11 +438,13 @@ def test_feature_importance_with_empty_data(dummy_logger):
     with pytest.raises(SystemExit):
         get_feature_importance(model, X.columns, X, dummy_logger)
 
+
 MODELS = [
     RandomForestClassifier(random_state=42),
     LogisticRegression(solver="liblinear", random_state=42),
     GradientBoostingClassifier(random_state=42),
 ]
+
 
 @pytest.fixture(scope="module")
 def sample_dataset():
@@ -482,8 +455,16 @@ def sample_dataset():
         n_informative=10,
         random_state=42,
     )
-    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    return pd.DataFrame(x_train), pd.DataFrame(x_test), pd.Series(y_train), pd.Series(y_test)
+    x_train, x_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
+    return (
+        pd.DataFrame(x_train),
+        pd.DataFrame(x_test),
+        pd.Series(y_train),
+        pd.Series(y_test),
+    )
+
 
 @pytest.mark.parametrize("model", MODELS)
 def test_metrics_for_different_models(model, sample_dataset):
@@ -506,13 +487,22 @@ def test_metrics_for_different_models(model, sample_dataset):
     )
 
     expected_keys = {
-        "accuracy_train", "auc_train", "f1_train", "precision_train", "recall_train",
-        "accuracy_test", "auc_test", "f1_test", "precision_test", "recall_test"
+        "accuracy_train",
+        "auc_train",
+        "f1_train",
+        "precision_train",
+        "recall_train",
+        "accuracy_test",
+        "auc_test",
+        "f1_test",
+        "precision_test",
+        "recall_test",
     }
 
     assert set(result.keys()) == expected_keys
     for value in result.values():
         assert isinstance(value, float)
+
 
 def test_metrics_values_are_valid(sample_dataset):
     model = LogisticRegression(solver="liblinear", random_state=42)
@@ -537,6 +527,7 @@ def test_metrics_values_are_valid(sample_dataset):
     for k, v in result.items():
         assert 0.0 <= v <= 1.0, f"{k} fuori range: {v}"
 
+
 def test_logging_called(sample_dataset):
     model = LogisticRegression(solver="liblinear", random_state=42)
     x_train, x_test, y_train, y_test = sample_dataset
@@ -558,6 +549,7 @@ def test_logging_called(sample_dataset):
 
     logger.info.assert_called_once_with("Calculate classification metrics")
     assert logger.debug.call_count >= 3
+
 
 def test_log_metrics_to_mlflow(sample_dataset):
     model = GradientBoostingClassifier(random_state=42)
@@ -586,6 +578,7 @@ def test_log_metrics_to_mlflow(sample_dataset):
         # Verifica che siano state loggate tutte le metriche
         assert all(isinstance(v, float) for v in result.values())
 
+
 def test_missing_predictions_should_raise():
     x = pd.DataFrame([[0, 1], [1, 0]])
     y = pd.Series([0, 1])
@@ -600,9 +593,10 @@ def test_missing_predictions_should_raise():
             y_train=y,
             y_test=y,
             y_train_pred=pd.Series([0]),  # <--- solo 1 elemento!
-            y_test_pred=pd.Series([1]),   # <--- solo 1 elemento!
+            y_test_pred=pd.Series([1]),  # <--- solo 1 elemento!
             logger=logger,
         )
+
 
 def test_imbalanced_labels(sample_dataset):
     x_train, x_test, y_train, y_test = sample_dataset
@@ -630,6 +624,7 @@ def test_imbalanced_labels(sample_dataset):
     # F1, precision e recall possono essere bassi, ma devono esserci
     assert all(0.0 <= v <= 1.0 for v in result.values())
 
+
 def test_model_without_predict_proba_should_fail(sample_dataset):
     model = SVC(probability=False)
     x_train, x_test, y_train, y_test = sample_dataset
@@ -651,6 +646,7 @@ def test_model_without_predict_proba_should_fail(sample_dataset):
             logger=logger,
         )
     assert exc_info.value.code == 1
+
 
 def test_mlflow_logging_failure(monkeypatch, sample_dataset):
     x_train, x_test, y_train, y_test = sample_dataset
@@ -679,6 +675,7 @@ def test_mlflow_logging_failure(monkeypatch, sample_dataset):
         for k, v in metrics.items():
             mlflow.log_metric(k, v)
 
+
 def test_regression_metrics_basic():
     x = pd.DataFrame(np.arange(10).reshape(-1, 1))
     y = pd.Series(np.arange(10))
@@ -700,6 +697,7 @@ def test_regression_metrics_basic():
     assert metrics["r2_train"] == pytest.approx(1.0)
     assert metrics["mae_train"] == pytest.approx(0.0)
     assert metrics["rmse_train"] == pytest.approx(0.0)
+
 
 def test_regression_with_noise():
     rng = np.random.default_rng(seed=42)
@@ -724,6 +722,7 @@ def test_regression_with_noise():
     assert 0 < metrics["mae_train"]
     assert 0 < metrics["r2_train"] <= 1
 
+
 def test_regression_with_wrong_predictions():
     y = pd.Series([10, 20, 30])
     y_pred = pd.Series([0, 0, 0])
@@ -741,6 +740,7 @@ def test_regression_with_wrong_predictions():
     assert metrics["mse_train"] > 0
     assert metrics["r2_train"] < 0
 
+
 def test_regression_inconsistent_lengths_should_fail():
     y = pd.Series([1, 2, 3])
     y_pred = pd.Series([1, 2])  # lunghezza diversa
@@ -754,6 +754,7 @@ def test_regression_inconsistent_lengths_should_fail():
             y_test_pred=y_pred,
             logger=logger,
         )
+
 
 def test_classification_metrics_with_nan():
     x = pd.DataFrame([[0, 1], [1, 0]])
@@ -799,6 +800,7 @@ def test_regression_metrics_with_outliers():
     assert metrics["mse_train"] > 2000  # Il MSE sarà grande per l'outlier
     assert metrics["r2_train"] < 1  # R2 inferiore a 1, ma non errore
 
+
 def test_classification_metrics_inconsistent_lengths():
     x = pd.DataFrame([[0, 1], [1, 0]])
     y = pd.Series([0, 1])
@@ -817,6 +819,7 @@ def test_classification_metrics_inconsistent_lengths():
             y_test_pred=y_train_pred,
             logger=logger,
         )
+
 
 def test_mlflow_logging_regression_metrics():
     y_train = pd.Series([1, 2, 3])
@@ -843,6 +846,7 @@ def test_mlflow_logging_regression_metrics():
     for k in metrics.keys():
         assert k in logged_metrics
         assert abs(metrics[k] - logged_metrics[k]) < 1e-6
+
 
 def test_mlflow_logging_classification_metrics():
     from sklearn.datasets import make_classification
@@ -874,3 +878,116 @@ def test_mlflow_logging_classification_metrics():
     for k in metrics.keys():
         assert k in logged_metrics
         assert abs(metrics[k] - logged_metrics[k]) < 1e-6
+
+
+@pytest.fixture
+def sample_data_complex():
+    # Crea dataset più grande, con anomalie e 2 features
+    x = pd.DataFrame(
+        {
+            "feature1": np.concatenate(
+                [np.random.normal(50, 5, 95), [500, 600, 700, 800, 900]]
+            ),
+            "feature2": np.random.normal(0, 1, 100),
+        }
+    )
+    y = pd.DataFrame({"target": np.random.randint(0, 2, size=100)})
+
+    # Split train/test semplicissimo (ad esempio 80/20)
+    train_len = int(0.8 * len(x))
+    x_train = x.iloc[:train_len].reset_index(drop=True)
+    x_test = x.iloc[train_len:].reset_index(drop=True)
+    y_train = y.iloc[:train_len].reset_index(drop=True)
+    y_test = y.iloc[train_len:].reset_index(drop=True)
+
+    metadata = MetaData(
+        features=list(x.columns),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+    )
+    logger = MagicMock()
+
+    return x_train, x_test, y_train, y_test, metadata, logger
+
+
+@patch("src.training.main.get_feature_importance", return_value=pd.DataFrame())
+@patch(
+    "src.training.main.calculate_classification_metrics", return_value={"accuracy": 1.0}
+)
+@patch("src.training.main.log_on_mlflow")
+def test_train_model_with_scaling_classification(
+    mock_log, mock_metrics, mock_importance, sample_data_complex
+):
+    x_train, x_test, y_train, y_test, metadata, logger = sample_data_complex
+    model = LogisticRegression()
+
+    train_model(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        model_name="test_logreg",
+        model=model,
+        scaling_enable=True,
+        scaler_file="scaler.pkl",
+        logger=logger,
+    )
+
+    assert isinstance(model, LogisticRegression)
+    mock_metrics.assert_called_once()
+    mock_log.assert_called_once()
+    mock_importance.assert_called_once()
+    logger.info.assert_any_call("Model successfully trained")
+
+
+@patch("src.training.main.get_feature_importance", return_value=pd.DataFrame())
+@patch("src.training.main.calculate_regression_metrics", return_value={"mse": 0.1})
+@patch("src.training.main.log_on_mlflow")
+def test_train_model_without_scaling_regression(
+    mock_log, mock_metrics, mock_importance, sample_data_complex
+):
+    x_train, x_test, y_train, y_test, metadata, logger = sample_data_complex
+    model = LinearRegression()
+
+    train_model(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        model_name="test_linreg",
+        model=model,
+        scaling_enable=False,
+        scaler_file="scaler.pkl",
+        logger=logger,
+    )
+
+    mock_metrics.assert_called_once()
+    mock_log.assert_called_once()
+    mock_importance.assert_called_once()
+    logger.info.assert_any_call("Model successfully trained")
+
+
+@patch("src.training.main.get_feature_importance", return_value=pd.DataFrame())
+@patch("src.training.main.calculate_classification_metrics", return_value={})
+@patch("src.training.main.log_on_mlflow")
+def test_logger_usage(mock_log, mock_metrics, mock_importance, sample_data_complex):
+    x_train, x_test, y_train, y_test, metadata, logger = sample_data_complex
+    model = LogisticRegression()
+
+    train_model(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        model_name="test_log",
+        model=model,
+        scaling_enable=True,
+        scaler_file="scaler.pkl",
+        logger=logger,
+    )
+
+    assert logger.info.call_count >= 3
+    logger.info.assert_any_call("Metrics computed")
