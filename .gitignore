@@ -12,6 +12,9 @@
 mlruns
 **.whl
 
+# Coverage
+.coverage*
+
 # Data to ignore. Mounted as volumes
 **/dataset/
 **/messages/
