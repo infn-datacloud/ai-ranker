@@ -95,7 +95,6 @@ def test_get_model_uri_latest_version():
 def test_get_model_uri_specific_version():
     client = MagicMock()
 
-    # Definisci un mock con attributi reali
     v1 = MagicMock()
     v1.name = "MyModel"
     v1.version = "1"
@@ -139,7 +138,10 @@ def test_get_scaler(mock_load_dict):
     result = get_scaler(model_uri="some/uri", scaler_file="scaler.pkl")
     assert isinstance(result, RobustScaler)
 
-@patch("mlflow.set_tracking_uri", side_effect=mlflow.exceptions.MlflowException("error"))
+
+@patch(
+    "mlflow.set_tracking_uri", side_effect=mlflow.exceptions.MlflowException("error")
+)
 @patch("src.settings.load_mlflow_settings")
 def test_setup_mlflow_failure(mock_load_settings, mock_set_uri):
     logger = MagicMock()
@@ -155,6 +157,7 @@ def test_setup_mlflow_failure(mock_load_settings, mock_set_uri):
     with pytest.raises(SystemExit):
         setup_mlflow(logger=logger)
     logger.error.assert_called_once()
+
 
 @patch("mlflow.start_run", side_effect=mlflow.exceptions.MlflowException("fail"))
 def test_log_on_mlflow_failure(mock_start_run):
@@ -184,6 +187,7 @@ def test_log_on_mlflow_failure(mock_start_run):
         )
     logger.error.assert_called_once()
 
+
 @patch("src.utils.mlflow.mlflow")
 def test_log_on_mlflow_scaling_disabled(mock_mlflow, mock_logger, mock_metadata):
     model = LogisticRegression()
@@ -205,38 +209,44 @@ def test_log_on_mlflow_scaling_disabled(mock_mlflow, mock_logger, mock_metadata)
     )
 
     assert not any(
-        call.args[0] == "scaler.pkl"
-        for call in mock_mlflow.log_artifact.call_args_list
+        call.args[0] == "scaler.pkl" for call in mock_mlflow.log_artifact.call_args_list
     )
+
 
 @patch("src.utils.mlflow.mlflow.artifacts.load_dict")
 def test_get_scaler_missing_key(mock_load_dict):
-    # Simula un dizionario senza la chiave 'scaler'
     mock_load_dict.return_value = {}
 
     with pytest.raises(KeyError, match="scaler.*not found"):
         get_scaler(model_uri="some/uri", scaler_file="scaler.pkl")
 
-@patch("src.utils.mlflow.mlflow.artifacts.load_dict", side_effect=Exception("load failed"))
+
+@patch(
+    "src.utils.mlflow.mlflow.artifacts.load_dict", side_effect=Exception("load failed")
+)
 def test_get_scaler_load_dict_exception(mock_load_dict):
     with pytest.raises(Exception, match="load failed"):
         get_scaler(model_uri="some/uri", scaler_file="scaler.pkl")
 
+
 @patch("src.utils.mlflow.mlflow.artifacts.load_dict")
 def test_get_scaler_invalid_pickle(mock_load_dict):
-    # Dati base64 validi ma non un oggetto pickled
     invalid_data = base64.b64encode(b"not a pickled object").decode("utf-8")
     mock_load_dict.return_value = {"scaler": invalid_data}
 
     with pytest.raises(Exception):
         get_scaler(model_uri="some/uri", scaler_file="scaler.pkl")
 
+
 def test_get_model_uri_raises_value_error():
     client = MagicMock()
     client.search_model_versions.return_value = []
 
     with pytest.raises(ValueError, match=r"Model .* not found"):
-        get_model_uri(model_name="modello_inesistente", model_version="9999", client=client)
+        get_model_uri(
+            model_name="modello_inesistente", model_version="9999", client=client
+        )
+
 
 def test_get_model_uri_raises_value_error_version_not_found():
     client = MagicMock()
@@ -249,6 +259,7 @@ def test_get_model_uri_raises_value_error_version_not_found():
     with pytest.raises(ValueError, match=r"Version .* not found"):
         get_model_uri(model_name="modello_esistente", model_version=9999, client=client)
 
+
 def test_get_model_raises_value_error_on_load_failure():
     fake_uri = "fake_uri"
 
@@ -256,23 +267,26 @@ def test_get_model_raises_value_error_on_load_failure():
     mock_model.metadata.flavors.keys.return_value = {"sklearn"}
     mock_model.loader_module = "mlflow.sklearn"
 
-    with patch("src.utils.mlflow.load_model", return_value=mock_model), \
-         patch("mlflow.sklearn.load_model") as mock_sklearn_load:
-
+    with (
+        patch("src.utils.mlflow.load_model", return_value=mock_model),
+        patch("mlflow.sklearn.load_model") as mock_sklearn_load,
+    ):
         mock_sklearn_load.side_effect = Exception("Errore simulato")
 
-        with pytest.raises(ValueError, match=f"Model not found at given uri '{fake_uri}'"):
+        with pytest.raises(
+            ValueError, match=f"Model not found at given uri '{fake_uri}'"
+        ):
             get_model(model_uri=fake_uri)
+
 
 def test_get_model_raises_value_error_for_wrong_loader_module():
     fake_uri = "fake_uri"
     mock_model = MagicMock()
     mock_model.metadata.flavors.keys.return_value = {"sklearn"}
-    # Qui imposto loader_module a qualcosa di diverso da "mlflow.sklearn"
     mock_model.loader_module = "mlflow.pytorch"
 
     with patch("src.utils.mlflow.load_model", return_value=mock_model):
-        with pytest.raises(ValueError, match="Model .* not in the mlflow.sklearn library"):
+        with pytest.raises(
+            ValueError, match="Model .* not in the mlflow.sklearn library"
+        ):
             get_model(model_uri=fake_uri)
-
-

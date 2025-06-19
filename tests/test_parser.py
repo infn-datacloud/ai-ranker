@@ -12,11 +12,15 @@ def test_default_arguments():
     assert args.training is False
     assert args.inference is False
 
-@pytest.mark.parametrize("loglevel", [lvl.lower() for lvl in logging._nameToLevel.keys()])
+
+@pytest.mark.parametrize(
+    "loglevel", [lvl.lower() for lvl in logging._nameToLevel.keys()]
+)
 def test_valid_loglevels(loglevel):
     # Test that all valid log levels are accepted
     args = parser.parse_args(["--loglevel", loglevel])
     assert args.loglevel == loglevel
+
 
 def test_training_flag():
     # Test that the training flag sets the correct attribute
@@ -24,11 +28,13 @@ def test_training_flag():
     assert args.training is True
     assert args.inference is False
 
+
 def test_inference_flag():
     # Test that the inference flag sets the correct attribute
     args = parser.parse_args(["--inference"])
     assert args.inference is True
     assert args.training is False
+
 
 def test_training_and_inference_flags():
     # Test that both flags can be set together
@@ -36,10 +42,12 @@ def test_training_and_inference_flags():
     assert args.training is True
     assert args.inference is True
 
+
 def test_invalid_loglevel():
     # Test that an invalid log level causes a system exit
     with pytest.raises(SystemExit):
         parser.parse_args(["--loglevel", "invalidlevel"])
+
 
 def test_short_flags():
     # Test short versions of the flags

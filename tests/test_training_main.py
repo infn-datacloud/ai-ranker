@@ -167,7 +167,6 @@ def test_remove_outliers_combined_column_names_preserved():
 
 @pytest.fixture
 def sample_data():
-    # 100 righe, alcune con valori anomali
     x = pd.DataFrame(
         {
             "feature1": np.concatenate(
@@ -208,7 +207,6 @@ def test_split_with_removing_outliers(sample_data):
     )
     x_train, x_test, y_train, y_test = split_and_clean_data(x=x, y=y, settings=settings)
 
-    # Verifica che gli outlier siano stati rimossi dal train set
     assert len(x_train) < 80
     assert len(x_test) == 20
     assert len(y_train) == len(x_train)
@@ -241,7 +239,6 @@ def test_test_set_unchanged_with_or_without_outliers(sample_data):
         x=x, y=y, settings=settings_with_outliers
     )
 
-    # Il test set deve essere identico
     pd.testing.assert_frame_equal(
         x_test_no.reset_index(drop=True), x_test_yes.reset_index(drop=True)
     )
@@ -283,7 +280,7 @@ def test_split_with_empty_dataset():
         THRESHOLD_FACTOR=1.5,
     )
 
-    with pytest.raises(ValueError):  # train_test_split solleverà un errore
+    with pytest.raises(ValueError):
         split_and_clean_data(x=x, y=y, settings=settings)
 
 
@@ -299,7 +296,7 @@ def test_split_with_single_sample():
         THRESHOLD_FACTOR=1.5,
     )
 
-    with pytest.raises(ValueError):  # Anche qui train_test_split solleva errore
+    with pytest.raises(ValueError):
         split_and_clean_data(x=x, y=y, settings=settings)
 
 
@@ -339,7 +336,6 @@ def test_feature_importance_with_coef(dummy_logger):
 
 @patch("src.training.main.shap.Explainer")
 def test_feature_importance_with_shap(mock_shap, dummy_logger):
-    # Crea un modello fake senza coef_ o feature_importances_
     class DummyModel(BaseEstimator):
         def predict_proba(self, X):
             return np.array([[0.3, 0.7]] * len(X))
@@ -366,7 +362,6 @@ def test_feature_importance_shap_failure(mock_kernel_explainer, dummy_logger):
         def predict_proba(self, X):
             return np.array([[0.5, 0.5]] * len(X))
 
-    # Istanza finta dell'explainer
     mock_explainer_instance = MagicMock()
     mock_explainer_instance.shap_values.side_effect = Exception("SHAP error")
     mock_kernel_explainer.return_value = mock_explainer_instance
@@ -523,7 +518,6 @@ def test_metrics_values_are_valid(sample_dataset):
         logger=logger,
     )
 
-    # Verifica che tutte le metriche siano in [0, 1]
     for k, v in result.items():
         assert 0.0 <= v <= 1.0, f"{k} fuori range: {v}"
 
@@ -575,7 +569,6 @@ def test_log_metrics_to_mlflow(sample_dataset):
         for k, v in result.items():
             mlflow.log_metric(k, v)
 
-        # Verifica che siano state loggate tutte le metriche
         assert all(isinstance(v, float) for v in result.values())
 
 
@@ -592,8 +585,8 @@ def test_missing_predictions_should_raise():
             x_test_scaled=x,
             y_train=y,
             y_test=y,
-            y_train_pred=pd.Series([0]),  # <--- solo 1 elemento!
-            y_test_pred=pd.Series([1]),  # <--- solo 1 elemento!
+            y_train_pred=pd.Series([0]),
+            y_test_pred=pd.Series([1]),
             logger=logger,
         )
 
@@ -601,7 +594,6 @@ def test_missing_predictions_should_raise():
 def test_imbalanced_labels(sample_dataset):
     x_train, x_test, y_train, y_test = sample_dataset
 
-    # Sbilanciamento
     y_train = pd.Series(np.random.choice([0, 1], size=len(y_train), p=[0.95, 0.05]))
     y_test = pd.Series(np.random.choice([0, 1], size=len(y_test), p=[0.95, 0.05]))
 
@@ -621,7 +613,6 @@ def test_imbalanced_labels(sample_dataset):
         logger=logger,
     )
 
-    # F1, precision e recall possono essere bassi, ma devono esserci
     assert all(0.0 <= v <= 1.0 for v in result.values())
 
 
@@ -691,7 +682,6 @@ def test_regression_metrics_basic():
         logger=logger,
     )
 
-    # R² = 1 in caso perfetto, MSE = MAE = RMSE = 0
     assert metrics["mse_train"] == pytest.approx(0.0)
     assert metrics["r2_train"] == pytest.approx(1.0)
     assert metrics["mae_train"] == pytest.approx(0.0)
@@ -715,7 +705,6 @@ def test_regression_with_noise():
         logger=logger,
     )
 
-    # R² deve essere < 1, MSE > 0
     assert 0 < metrics["mse_train"] < 30
     assert 0 < metrics["rmse_train"]
     assert 0 < metrics["mae_train"]
@@ -735,14 +724,13 @@ def test_regression_with_wrong_predictions():
         logger=logger,
     )
 
-    # MSE dovrebbe essere elevato, R² < 0
     assert metrics["mse_train"] > 0
     assert metrics["r2_train"] < 0
 
 
 def test_regression_inconsistent_lengths_should_fail():
     y = pd.Series([1, 2, 3])
-    y_pred = pd.Series([1, 2])  # lunghezza diversa
+    y_pred = pd.Series([1, 2])
 
     logger = MagicMock()
     with pytest.raises(ValueError):
@@ -759,7 +747,6 @@ def test_classification_metrics_with_nan():
     x = pd.DataFrame([[0, 1], [1, 0]])
     y = pd.Series([0, np.nan])
 
-    # filtra sia X che y per rimuovere righe con NaN in y
     mask = y.notna()
     x_clean = x[mask]
     y_clean = y[mask]
@@ -783,7 +770,7 @@ def test_classification_metrics_with_nan():
 
 
 def test_regression_metrics_with_outliers():
-    y_train = pd.Series([1.0, 2.0, 3.0, 1000.0])  # outlier estremo
+    y_train = pd.Series([1.0, 2.0, 3.0, 1000.0])
     y_train_pred = pd.Series([1.1, 2.1, 2.9, 900.0])
     y_test = pd.Series([1.5, 2.5, 3.5])
     y_test_pred = pd.Series([1.4, 2.4, 3.6])
@@ -796,8 +783,8 @@ def test_regression_metrics_with_outliers():
         y_test_pred=y_test_pred,
         logger=logger,
     )
-    assert metrics["mse_train"] > 2000  # Il MSE sarà grande per l'outlier
-    assert metrics["r2_train"] < 1  # R2 inferiore a 1, ma non errore
+    assert metrics["mse_train"] > 2000
+    assert metrics["r2_train"] < 1
 
 
 def test_classification_metrics_inconsistent_lengths():
@@ -805,7 +792,7 @@ def test_classification_metrics_inconsistent_lengths():
     y = pd.Series([0, 1])
     model = RandomForestClassifier().fit(x, y)
     logger = MagicMock()
-    y_train_pred = pd.Series([0])  # dimensione errata
+    y_train_pred = pd.Series([0])
 
     with pytest.raises(ValueError):
         calculate_classification_metrics(
@@ -881,7 +868,6 @@ def test_mlflow_logging_classification_metrics():
 
 @pytest.fixture
 def sample_data_complex():
-    # Crea dataset più grande, con anomalie e 2 features
     x = pd.DataFrame(
         {
             "feature1": np.concatenate(
@@ -892,7 +878,6 @@ def sample_data_complex():
     )
     y = pd.DataFrame({"target": np.random.randint(0, 2, size=100)})
 
-    # Split train/test semplicissimo (ad esempio 80/20)
     train_len = int(0.8 * len(x))
     x_train = x.iloc[:train_len].reset_index(drop=True)
     x_test = x.iloc[train_len:].reset_index(drop=True)

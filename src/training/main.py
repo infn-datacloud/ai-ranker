@@ -154,7 +154,6 @@ def get_feature_importance(
             exit(1)
 
 
-
 def calculate_classification_metrics(
     model: ClassifierMixin,
     *,
@@ -169,8 +168,10 @@ def calculate_classification_metrics(
     """Compute Metrics on a Classification Model."""
     logger.info("Calculate classification metrics")
     if not hasattr(model, "predict_proba"):
-        logger.error("The model %s does not support predict_proba for AUC computation.",
-                     model.__class__.__name__)
+        logger.error(
+            "The model %s does not support predict_proba for AUC computation.",
+            model.__class__.__name__,
+        )
         exit(1)
     train_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_train, y_train_pred),

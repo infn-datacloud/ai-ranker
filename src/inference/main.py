@@ -405,7 +405,9 @@ def run(logger: Logger) -> None:
         settings=settings, logger=logger
     )
     if not settings.LOCAL_MODE:
-        processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
+        processed_dep_uuids = [
+            message.value[MSG_DEP_UUID] for message in output_consumer
+        ]
     else:
         processed_dep_uuids = [message[MSG_DEP_UUID] for message in output_consumer]
 

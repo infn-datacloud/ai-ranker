@@ -11,12 +11,13 @@ from src.utils import (
     write_data_to_file,
 )
 
-# === Costanti fittizie per i test ===
+# === Costants ===
 MSG_VERSION = "version"
 MSG_VALID_KEYS = {"v1": {"feature1", "feature2"}}
 
 
-# === Fixture comuni ===
+# === common fixture===
+
 
 @pytest.fixture
 def csv_file(tmp_path):
@@ -24,6 +25,7 @@ def csv_file(tmp_path):
     file_path = tmp_path / "test.csv"
     df.to_csv(file_path, index=False)
     return str(file_path)
+
 
 @pytest.fixture
 def json_file(tmp_path):
@@ -36,12 +38,14 @@ def json_file(tmp_path):
 
 # === Test: load_local_dataset ===
 
+
 @patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
 def test_load_local_dataset_csv(csv_file):
     logger = MagicMock()
     df = load_local_dataset(filename=csv_file, dataset_version="v1", logger=logger)
     assert not df.empty
     assert list(df.columns) == ["feature1", "feature2"]
+
 
 @patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS)
 def test_load_local_dataset_json(json_file):
@@ -50,12 +54,14 @@ def test_load_local_dataset_json(json_file):
     assert not df.empty
     assert list(df.columns) == ["feature1", "feature2"]
 
+
 def test_load_local_dataset_invalid_extension(tmp_path):
     bad_file = tmp_path / "invalid.txt"
     bad_file.write_text("just text")
     logger = MagicMock()
     with pytest.raises(ValueError, match="Unsupported file extension: .txt"):
         load_local_dataset(filename=str(bad_file), dataset_version="v1", logger=logger)
+
 
 def test_load_local_dataset_invalid_version(csv_file):
     logger = MagicMock()
@@ -65,8 +71,12 @@ def test_load_local_dataset_invalid_version(csv_file):
 
 # === Test: load_dataset_from_kafka_messages ===
 
+
 def test_load_dataset_from_kafka_messages():
-    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+    with (
+        patch("src.utils.MSG_VERSION", MSG_VERSION),
+        patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS),
+    ):
         consumer = [
             MagicMock(value={"version": "v1", "feature1": 1, "feature2": 2}),
             MagicMock(value={"version": "v1", "feature1": 3, "feature2": 4}),
@@ -76,8 +86,12 @@ def test_load_dataset_from_kafka_messages():
         assert not df.empty
         assert list(df.columns) == ["feature1", "feature2"]
 
+
 def test_load_dataset_from_kafka_invalid_keys():
-    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+    with (
+        patch("src.utils.MSG_VERSION", MSG_VERSION),
+        patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS),
+    ):
         consumer = [
             MagicMock(value={"version": "v1", "feature1": 1, "invalid_feature": 2}),
         ]
@@ -85,17 +99,26 @@ def test_load_dataset_from_kafka_invalid_keys():
         with pytest.raises(AssertionError, match="Found invalid keys"):
             load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
+
 def test_load_dataset_from_kafka_unsupported_version():
-    with patch("src.utils.MSG_VERSION", MSG_VERSION), patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS):
+    with (
+        patch("src.utils.MSG_VERSION", MSG_VERSION),
+        patch("src.utils.MSG_VALID_KEYS", MSG_VALID_KEYS),
+    ):
         consumer = [
-            MagicMock(value={"version": "unsupported_version", "feature1": 1, "feature2": 2}),
+            MagicMock(
+                value={"version": "unsupported_version", "feature1": 1, "feature2": 2}
+            ),
         ]
         logger = MagicMock()
-        with pytest.raises(ValueError, match="Message version unsupported_version not supported"):
+        with pytest.raises(
+            ValueError, match="Message version unsupported_version not supported"
+        ):
             load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
 
 # === Test: load_data_from_file ===
+
 
 def test_load_data_from_file(tmp_path):
     file_path = tmp_path / "data.json"
@@ -108,6 +131,7 @@ def test_load_data_from_file(tmp_path):
 
 
 # === Test: write_data_to_file ===
+
 
 def test_write_data_to_file(tmp_path):
     file_path = tmp_path / "out.json"

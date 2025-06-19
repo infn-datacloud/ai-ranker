@@ -31,7 +31,9 @@ def test_create_kafka_consumer_default(mock_kafka_consumer, mock_logger):
 
 @patch("src.utils.kafka.KafkaConsumer")
 @patch("src.utils.kafka.TopicPartition")
-def test_create_kafka_consumer_with_partition(mock_topic_partition, mock_kafka_consumer, mock_logger):
+def test_create_kafka_consumer_with_partition(
+    mock_topic_partition, mock_kafka_consumer, mock_logger
+):
     consumer_instance = MagicMock()
     consumer_instance.bootstrap_connected.return_value = True
     mock_kafka_consumer.return_value = consumer_instance
@@ -98,6 +100,7 @@ def test_create_kafka_producer_no_broker(mock_kafka_producer, mock_logger):
         "Kakfa Broker not found at given url: %s", "localhost:9092"
     )
 
+
 @patch("src.utils.kafka.KafkaConsumer")
 def test_create_kafka_consumer_with_nonzero_timeout(mock_kafka_consumer, mock_logger):
     consumer_instance = MagicMock()
@@ -115,8 +118,11 @@ def test_create_kafka_consumer_with_nonzero_timeout(mock_kafka_consumer, mock_lo
     mock_logger.info.assert_not_called()
     assert consumer == consumer_instance
 
+
 @patch("src.utils.kafka.KafkaConsumer")
-def test_create_kafka_consumer_with_nonzero_timeout_other(mock_kafka_consumer, mock_logger):
+def test_create_kafka_consumer_with_nonzero_timeout_other(
+    mock_kafka_consumer, mock_logger
+):
     consumer_instance = MagicMock()
     consumer_instance.bootstrap_connected.return_value = True
     mock_kafka_consumer.return_value = consumer_instance

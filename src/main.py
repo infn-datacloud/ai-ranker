@@ -14,5 +14,6 @@ def main():
     else:
         logger.warning("Neither --training or --inference arguments have been defined")
 
+
 if __name__ == "__main__":
     main()
