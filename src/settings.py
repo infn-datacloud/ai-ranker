@@ -160,17 +160,17 @@ class TrainingSettings(CommonSettings):
 
         for model_name, model_params in value.items():
             # Get the class of the model
-            model_class = estimators.get(model_name, None)
+            found_class = estimators.get(model_name, None)
 
-            if model_class is None:
+            if found_class is None:
                 raise ValueError(f"Model {model_name} not found")
 
             # Verify that the model belongs to the correct class
-            if not issubclass(model_class, model_class):
+            if not issubclass(found_class, model_class):
                 raise TypeError(f"The model {model_name} is not a {model_type} model")
 
             # Create the model object from the parameters
-            model = model_class(**model_params)
+            model = found_class(**model_params)
             models_dict[model_name] = model
 
         return models_dict
