@@ -9,7 +9,7 @@ from kafka.errors import NoBrokersAvailable
 from mlflow import MlflowClient
 from sklearn.preprocessing import RobustScaler
 
-from processing import (
+from src.processing import (
     DF_AVG_FAIL_TIME,
     DF_AVG_SUCCESS_TIME,
     DF_FAIL_PERC,
@@ -20,9 +20,9 @@ from processing import (
     calculate_derived_properties,
     preprocessing,
 )
-from settings import InferenceSettings, load_inference_settings
-from training.main import load_training_data
-from utils import (
+from src.settings import InferenceSettings, load_inference_settings
+from src.training.main import load_training_data
+from src.utils import (
     MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
@@ -34,8 +34,8 @@ from utils import (
     load_data_from_file,
     write_data_to_file,
 )
-from utils.kafka import create_kafka_consumer, create_kafka_producer
-from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
+from src.utils.kafka import create_kafka_consumer, create_kafka_producer
+from src.utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
 
 CLASSIFICATION_SUCCESS_IDX = 0
 NO_PREDICTED_VALUE = -1
