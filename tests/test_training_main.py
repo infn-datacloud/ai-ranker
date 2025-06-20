@@ -18,10 +18,12 @@ from src.training.main import (
     calculate_regression_metrics,
     get_feature_importance,
     kfold_cross_validation,
+    load_training_data,
     remove_outliers,
     remove_outliers_from_dataframe,
     split_and_clean_data,
     train_model,
+    training_phase,
 )
 from src.training.models import MetaData
 
@@ -1104,3 +1106,123 @@ def test_train_model_classification(
     mock_log.assert_called_once()
     mock_importance.assert_called_once()
     logger.info.assert_any_call("Model successfully trained")
+
+
+@patch("src.training.main.train_model")
+def test_training_phase_single_model(mock_train_model):
+    x = pd.DataFrame([[1], [2]], columns=["feature1"])
+    y = pd.DataFrame([1, 2])
+    model = LinearRegression()
+    models = {"linreg": model}
+
+    metadata = MagicMock()
+    metadata.features = ["feature1"]
+
+    logger = MagicMock()
+
+    settings = TrainingSettings(
+        SCALING_ENABLE=True,
+        SCALER_FILE="scaler.pkl",
+        KFOLDS=3,
+    )
+
+    training_phase(
+        models=models,
+        x_train=x,
+        x_test=x,
+        y_train=y,
+        y_test=y,
+        metadata=metadata,
+        settings=settings,
+        logger=logger,
+    )
+
+    mock_train_model.assert_called_once()
+
+
+@patch("src.training.main.kfold_cross_validation")
+def test_training_phase_multiple_models(mock_kfold_cv):
+    x = pd.DataFrame([[1], [2]])
+    y = pd.DataFrame([1, 2])
+    models = {
+        "linreg": LinearRegression(),
+        "linreg2": LinearRegression(),
+    }
+    metadata = MagicMock()
+    logger = MagicMock()
+    settings = TrainingSettings(
+        SCALING_ENABLE=False,
+        SCALER_FILE="dummy.pkl",
+        KFOLDS=3,
+    )
+
+    training_phase(
+        models=models,
+        x_train=x,
+        x_test=x,
+        y_train=y,
+        y_test=y,
+        metadata=metadata,
+        settings=settings,
+        logger=logger,
+    )
+
+    mock_kfold_cv.assert_called_once()
+
+
+@patch("src.training.main.load_local_dataset")
+def test_load_training_data_local_mode_with_dataset(mock_load_local_dataset):
+    mock_logger = MagicMock()
+    expected_df = pd.DataFrame({"a": [1]})
+    mock_load_local_dataset.return_value = expected_df
+
+    result = load_training_data(
+        local_mode=True,
+        local_dataset="test.csv",
+        local_dataset_version="1.0.0",
+        logger=mock_logger,
+    )
+
+    mock_logger.info.assert_called_with("Upload training data")
+    mock_load_local_dataset.assert_called_once()
+    assert result.equals(expected_df)
+
+
+def test_load_training_data_local_mode_without_dataset():
+    mock_logger = MagicMock()
+
+    with pytest.raises(
+        ValueError, match="LOCAL_DATASET environment variable has not been set."
+    ):
+        load_training_data(
+            local_mode=True,
+            local_dataset=None,
+            logger=mock_logger,
+        )
+
+    mock_logger.info.assert_called_with("Upload training data")
+
+
+@patch("src.training.main.load_dataset_from_kafka_messages")
+@patch("src.training.main.create_kafka_consumer")
+def test_load_training_data_kafka_mode(mock_create_consumer, mock_load_kafka_data):
+    mock_logger = MagicMock()
+    mock_consumer = MagicMock()
+    expected_df = pd.DataFrame({"b": [2]})
+    mock_create_consumer.return_value = mock_consumer
+    mock_load_kafka_data.return_value = expected_df
+
+    result = load_training_data(
+        local_mode=False,
+        kafka_server_url="localhost:9092",
+        kafka_topic="my-topic",
+        logger=mock_logger,
+    )
+
+    mock_logger.info.assert_called_with("Upload training data")
+    mock_create_consumer.assert_called_once()
+    mock_load_kafka_data.assert_called_once_with(
+        consumer=mock_consumer, logger=mock_logger
+    )
+    mock_consumer.close.assert_called_once()
+    assert result.equals(expected_df)
