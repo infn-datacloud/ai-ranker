@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import mlflow
 import numpy as np
@@ -17,6 +17,7 @@ from src.training.main import (
     calculate_classification_metrics,
     calculate_regression_metrics,
     get_feature_importance,
+    kfold_cross_validation,
     remove_outliers,
     remove_outliers_from_dataframe,
     split_and_clean_data,
@@ -975,3 +976,131 @@ def test_logger_usage(mock_log, mock_metrics, mock_importance, sample_data_compl
 
     assert logger.info.call_count >= 3
     logger.info.assert_any_call("Metrics computed")
+
+
+@pytest.mark.parametrize("scaling_enable", [True, False])
+@patch("src.training.main.train_model")
+def test_kfold_cross_validation_runs(mock_train_model, scaling_enable):
+    x_train = pd.DataFrame({"feat1": np.random.rand(10), "feat2": np.random.rand(10)})
+    y_train = pd.DataFrame({"target": np.random.randint(0, 2, 10)})
+
+    x_test = pd.DataFrame({"feat1": np.random.rand(3), "feat2": np.random.rand(3)})
+    y_test = pd.DataFrame({"target": np.random.randint(0, 2, 3)})
+
+    metadata = Mock()
+    logger = Mock()
+    scaler_file = "dummy_scaler.pkl"
+
+    models = {"logreg": LogisticRegression(max_iter=100)}
+
+    kfold_cross_validation(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        models=models,
+        logger=logger,
+        n_splits=2,
+        scaling_enable=scaling_enable,
+        scaler_file=scaler_file,
+    )
+
+    mock_train_model.assert_called_once()
+
+
+def test_get_feature_importance_with_coef_ndim_mismatch(monkeypatch):
+    class FakeModel:
+        coef_ = np.array([[0.2, 0.3, 0.5]])  # ndim = 2
+
+    model = FakeModel()
+    columns = pd.Index(["a", "b"])  # length mismatch (3 != 2)
+    x_train_scaled = pd.DataFrame(np.random.rand(5, 3), columns=["a", "b", "c"])
+
+    logger = Mock()
+
+    with monkeypatch.context() as m:
+        m.setattr("builtins.exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+        try:
+            get_feature_importance(model, columns, x_train_scaled, logger)
+        except SystemExit as e:
+            assert e.code == 1
+            logger.error.assert_called_once()
+
+
+def test_get_feature_importance_with_coef_1d():
+    class FakeModel:
+        coef_ = np.array([0.1, 0.2, 0.3])
+
+    model = FakeModel()
+    columns = pd.Index(["a", "b", "c"])
+    x_train_scaled = pd.DataFrame(np.random.rand(10, 3), columns=["a", "b", "c"])
+
+    logger = Mock()
+
+    result = get_feature_importance(model, columns, x_train_scaled, logger)
+
+    assert isinstance(result, pd.DataFrame)
+    assert set(result.columns) == {"Feature", "Coefficient"}
+    assert len(result) == 3
+    logger.debug.assert_called()
+
+
+def test_get_feature_importance_shap_length_mismatch(monkeypatch):
+    class DummyModel:
+        def predict_proba(self, X):
+            return np.array([[0.5, 0.5]] * len(X))
+
+    model = DummyModel()
+    columns = pd.Index(["a", "b", "c"])
+    x_train_scaled = pd.DataFrame(np.random.rand(10, 3), columns=columns)
+    logger = MagicMock()
+
+    monkeypatch.setattr("shap.sample", lambda x: x)
+
+    class ExplainerMock:
+        def shap_values(self, X):
+            return np.random.rand(len(X), 2, 1)
+
+    monkeypatch.setattr(
+        "shap.KernelExplainer", lambda predict_fn, data: ExplainerMock()
+    )
+
+    with pytest.raises(SystemExit):
+        get_feature_importance(model, columns, x_train_scaled, logger)
+
+    logger.error.assert_called_with(
+        "Length mismatch: SHAP importance has length %d, but columns has length %d",
+        2,
+        3,
+    )
+
+
+@patch("src.training.main.get_feature_importance", return_value=pd.DataFrame())
+@patch(
+    "src.training.main.calculate_classification_metrics", return_value={"accuracy": 0.9}
+)
+@patch("src.training.main.log_on_mlflow")
+def test_train_model_classification(
+    mock_log, mock_metrics, mock_importance, sample_data_complex
+):
+    x_train, x_test, y_train, y_test, metadata, logger = sample_data_complex
+    model = RandomForestClassifier(random_state=42)
+
+    train_model(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        model_name="test_rf_classifier",
+        model=model,
+        scaling_enable=False,
+        scaler_file="scaler.pkl",
+        logger=logger,
+    )
+
+    mock_metrics.assert_called_once()
+    mock_log.assert_called_once()
+    mock_importance.assert_called_once()
+    logger.info.assert_any_call("Model successfully trained")
