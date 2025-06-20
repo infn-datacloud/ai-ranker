@@ -138,3 +138,30 @@ def test_create_kafka_consumer_with_nonzero_timeout_other(
     consumer_instance.bootstrap_connected.assert_called_once()
     mock_logger.info.assert_called_once()
     assert consumer == consumer_instance
+
+
+@patch("src.utils.kafka.KafkaConsumer")
+@patch("src.utils.kafka.TopicPartition")
+def test_create_kafka_consumer_with_partition_and_bootstrap_false(
+    mock_topic_partition, mock_kafka_consumer, mock_logger
+):
+    consumer_instance = MagicMock()
+    consumer_instance.bootstrap_connected.return_value = False
+    mock_kafka_consumer.return_value = consumer_instance
+
+    tp_instance = MagicMock()
+    mock_topic_partition.return_value = tp_instance
+
+    consumer = create_kafka_consumer(
+        kafka_server_url="localhost:9092",
+        topic="test-topic",
+        partition=0,
+        offset=10,
+        logger=mock_logger,
+    )
+
+    mock_topic_partition.assert_called_once_with("test-topic", 0)
+    consumer_instance.assign.assert_called_once_with([tp_instance])
+    consumer_instance.seek.assert_called_once_with(tp_instance, 10)
+    mock_logger.info.assert_not_called()
+    assert consumer == consumer_instance
