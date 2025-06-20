@@ -5,6 +5,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 import pytest
+from kafka.errors import NoBrokersAvailable
 from sklearn.base import BaseEstimator
 from sklearn.datasets import make_classification
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
@@ -21,6 +22,7 @@ from src.training.main import (
     load_training_data,
     remove_outliers,
     remove_outliers_from_dataframe,
+    run,
     split_and_clean_data,
     train_model,
     training_phase,
@@ -1226,3 +1228,176 @@ def test_load_training_data_kafka_mode(mock_create_consumer, mock_load_kafka_dat
     )
     mock_consumer.close.assert_called_once()
     assert result.equals(expected_df)
+
+
+@patch("src.training.main.training_phase")
+@patch("src.training.main.split_and_clean_data")
+@patch("src.training.main.MetaData")
+@patch("src.training.main.preprocessing")
+@patch("src.training.main.load_training_data")
+@patch("src.training.main.setup_mlflow")
+@patch("src.training.main.load_training_settings")
+def test_run_success(
+    mock_load_training_settings,
+    mock_setup_mlflow,
+    mock_load_training_data,
+    mock_preprocessing,
+    mock_metadata,
+    mock_split_and_clean_data,
+    mock_training_phase,
+):
+    mock_logger = MagicMock()
+
+    # Settings mock
+    mock_settings = MagicMock()
+    mock_settings.LOCAL_MODE = True
+    mock_settings.LOCAL_DATASET = "train.csv"
+    mock_settings.LOCAL_DATASET_VERSION = "1.0.0"
+    mock_settings.KAFKA_HOSTNAME = "kafka"
+    mock_settings.KAFKA_TRAINING_TOPIC = "topic"
+    mock_settings.KAFKA_TRAINING_TOPIC_PARTITION = 0
+    mock_settings.KAFKA_TRAINING_TOPIC_OFFSET = 0
+    mock_settings.KAFKA_TRAINING_TOPIC_TIMEOUT = 1000
+    mock_settings.TEMPLATE_COMPLEX_TYPES = []
+    mock_settings.X_FEATURES = ["f1", "f2"]
+    mock_settings.Y_CLASSIFICATION_FEATURES = ["y_cls"]
+    mock_settings.Y_REGRESSION_FEATURES = ["y_reg"]
+    mock_settings.REMOVE_OUTLIERS = False
+    mock_settings.SCALING_ENABLE = False
+    mock_settings.SCALER_FILE = "scaler.pkl"
+    mock_settings.CLASSIFICATION_MODELS = {"clf": MagicMock()}
+    mock_settings.REGRESSION_MODELS = {"reg": MagicMock()}
+    mock_load_training_settings.return_value = mock_settings
+
+    # Mock data
+    df = pd.DataFrame(
+        {
+            "f1": [1, 2],
+            "f2": [3, 4],
+            "y_cls": [0, 1],
+            "y_reg": [10, 20],
+            "timestamp": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        }
+    )
+    mock_load_training_data.return_value = df
+    mock_preprocessing.return_value = df
+    mock_split_and_clean_data.return_value = ("x_train", "x_test", "y_train", "y_test")
+
+    # Run the function
+    run(logger=mock_logger)
+
+    # Assertions
+    mock_load_training_settings.assert_called_once()
+    mock_setup_mlflow.assert_called_once()
+    mock_load_training_data.assert_called_once()
+    mock_preprocessing.assert_called_once()
+    assert mock_metadata.call_count == 2
+    assert mock_split_and_clean_data.call_count == 2
+    assert mock_training_phase.call_count == 2
+    mock_logger.info.assert_any_call("Classification phase started")
+    mock_logger.info.assert_any_call("Classification phase ended")
+    mock_logger.info.assert_any_call("Regression phase started")
+    mock_logger.info.assert_any_call("Regression phase ended")
+
+
+@patch("src.training.main.load_training_data", side_effect=FileNotFoundError)
+@patch("src.training.main.load_training_settings")
+@patch("src.training.main.setup_mlflow")
+def test_run_file_not_found(mock_setup, mock_settings, mock_load):
+    mock_logger = MagicMock()
+    mock_settings.return_value = MagicMock(LOCAL_DATASET="missing.csv")
+    with pytest.raises(SystemExit):
+        run(logger=mock_logger)
+    mock_logger.error.assert_called_with("File '%s' not found", "missing.csv")
+
+
+@patch("src.training.main.load_training_data", side_effect=NoBrokersAvailable)
+@patch("src.training.main.load_training_settings")
+@patch("src.training.main.setup_mlflow")
+def test_run_no_broker(mock_setup, mock_settings, mock_load):
+    mock_logger = MagicMock()
+    mock_settings.return_value = MagicMock(KAFKA_HOSTNAME="kafka")
+    with pytest.raises(SystemExit):
+        run(logger=mock_logger)
+    mock_logger.error.assert_called_with(
+        "Kakfa broker not found at given url: %s", "kafka"
+    )
+
+
+@patch("src.training.main.load_training_data", side_effect=AssertionError("boom"))
+@patch("src.training.main.load_training_settings")
+@patch("src.training.main.setup_mlflow")
+def test_run_assertion_error(mock_setup, mock_settings, mock_load):
+    mock_logger = MagicMock()
+    mock_settings.return_value = MagicMock()
+    with pytest.raises(SystemExit):
+        run(logger=mock_logger)
+    assert mock_logger.error.called
+    assert isinstance(mock_logger.error.call_args[0][0], AssertionError)
+    assert str(mock_logger.error.call_args[0][0]) == "boom"
+
+
+@patch("src.training.main.load_training_data")
+@patch("src.training.main.preprocessing", return_value=pd.DataFrame())
+@patch("src.training.main.load_training_settings")
+@patch("src.training.main.setup_mlflow")
+def test_run_empty_df(mock_setup, mock_settings, mock_preprocessing, mock_load):
+    mock_logger = MagicMock()
+    df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01", "2024-01-02"])})
+    mock_load.return_value = df
+    mock_settings.return_value = MagicMock(
+        X_FEATURES=[],
+        Y_CLASSIFICATION_FEATURES=[],
+        Y_REGRESSION_FEATURES=[],
+        TEMPLATE_COMPLEX_TYPES=[],
+        LOCAL_MODE=True,
+        LOCAL_DATASET="any",
+        LOCAL_DATASET_VERSION="any",
+        KAFKA_HOSTNAME="any",
+        KAFKA_TRAINING_TOPIC="any",
+        KAFKA_TRAINING_TOPIC_PARTITION=0,
+        KAFKA_TRAINING_TOPIC_OFFSET=0,
+        KAFKA_TRAINING_TOPIC_TIMEOUT=0,
+        REMOVE_OUTLIERS=False,
+        SCALING_ENABLE=False,
+        SCALER_FILE="",
+        CLASSIFICATION_MODELS={},
+        REGRESSION_MODELS={},
+    )
+    run(logger=mock_logger)
+    mock_logger.warning.assert_called_with(
+        "No data to pre-process. No model generation."
+    )
+
+
+@patch("src.training.main.load_training_data")
+@patch("src.training.main.preprocessing")
+@patch("src.training.main.load_training_settings")
+@patch("src.training.main.setup_mlflow")
+def test_run_missing_features(mock_setup, mock_settings, mock_preprocessing, mock_load):
+    mock_logger = MagicMock()
+    df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01"]), "f1": [1]})
+    mock_load.return_value = df
+    mock_preprocessing.return_value = df
+    mock_settings.return_value = MagicMock(
+        X_FEATURES=["missing"],
+        Y_CLASSIFICATION_FEATURES=[],
+        Y_REGRESSION_FEATURES=[],
+        TEMPLATE_COMPLEX_TYPES=[],
+        LOCAL_MODE=True,
+        LOCAL_DATASET="any",
+        LOCAL_DATASET_VERSION="any",
+        KAFKA_HOSTNAME="any",
+        KAFKA_TRAINING_TOPIC="any",
+        KAFKA_TRAINING_TOPIC_PARTITION=0,
+        KAFKA_TRAINING_TOPIC_OFFSET=0,
+        KAFKA_TRAINING_TOPIC_TIMEOUT=0,
+        REMOVE_OUTLIERS=False,
+        SCALING_ENABLE=False,
+        SCALER_FILE="",
+        CLASSIFICATION_MODELS={},
+        REGRESSION_MODELS={},
+    )
+    with pytest.raises(SystemExit):
+        run(logger=mock_logger)
+    mock_logger.error.assert_called()
