@@ -52,7 +52,7 @@ def create_inference_input(
     Filter features.
     """
     input_features = model.feature_names_in_
-    values = [[data[k] for k in input_features if k in data]]
+    values = [[data.get(k, np.nan) for k in input_features]]
     x_new = pd.DataFrame(values, columns=input_features)
     if scaler is not None:
         return pd.DataFrame(
@@ -326,10 +326,14 @@ def create_message(
     """Create a dict with the deployment uuid and the list of ranked providers."""
     ranked_providers = []
     for provider, values in sorted_results.items():
+        data = None
         for i in input_data:
             if f"{i[MSG_PROVIDER_NAME]}-{i[MSG_REGION_NAME]}" == provider:
                 data = {**values, **i}
                 break
+        if data is None:
+            logger.error(f"No matching input_data entry for provider key '{provider}'")
+            raise ValueError(f"No matching input_data entry for provider key '{provider}'")
         ranked_providers.append(data)
     message = {MSG_DEP_UUID: deployment_uuid, "ranked_providers": ranked_providers}
     logger.debug("Output message: %s", message)
