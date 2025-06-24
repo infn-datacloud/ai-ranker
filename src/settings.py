@@ -112,11 +112,29 @@ class TrainingSettings(CommonSettings):
     THRESHOLD_FACTOR: float = Field(
         default=1.5, description="Multiplication factor for outlier threshold"
     )
-    X_FEATURES: list = Field(description="List of features to use as X")
+    X_FEATURES: list = Field(
+    default=[
+        "cpu_diff",
+        "ram_diff",
+        "storage_diff",
+        "instances_diff",
+        "floatingips_diff",
+        "gpu",
+        "test_failure_perc_30d",
+        "overbooking_ram",
+        "avg_success_time",
+        "avg_failure_time",
+        "failure_percentage",
+        "complexity",
+    ],
+    description="List of features to use as X"
+)
     Y_CLASSIFICATION_FEATURES: list = Field(
+        default=["status"],
         description="List of features to use as Y for classification"
     )
     Y_REGRESSION_FEATURES: list = Field(
+        default=["deployment_time"],
         description="List of features to use as Y for regression"
     )
 
