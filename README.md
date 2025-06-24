@@ -1,6 +1,6 @@
 # ai-ranker
 
-The **AI-Ranker** consists of two main scripts:  
+The **ai-ranker** consists of two main scripts:  
 - one for training Machine Learning (ML) models and storing them in an [MLflow](https://mlflow.org) registry;  
 - one for performing inference using the trained models retrieved from the registry.
 
@@ -310,3 +310,50 @@ If you don’t already have them running, we recommend deploying them using the 
 - [confluentinc/cp-kafka](https://hub.docker.com/r/confluentinc/cp-kafka)
 
 As said at the beginning, the Kafka instance is not mandatory, as messages can also be read from a local file, although this is intended for debugging purposes only.
+
+### Job Scheduler
+As previously said you can use a container job scheduler to execute the ai-ranker training script contained in the docker image at fixed intervals.
+Here, we suggest to use ofelia and we provide an example configuration for a docker-compose.yaml
+
+````
+services:
+  ai-ranker-training:
+    image: indigopaas/ai-ranker
+    container_name: ai-ranker-training
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: bash -c "while true; do sleep 1; done"
+    labels:
+      ofelia.enabled: true
+      ofelia.job-exec.feed.schedule: "@every 1m"
+      ofelia.job-exec.feed.command: "python /app/src/main.py --training"
+      ofelia.job-exec.feed.save-folder: /var/log
+      ofelia.job-exec.feed.no-overlap: false
+
+  ofelia:
+    image: mcuadros/ofelia:latest
+    container_name: training-job-scheduler
+    depends_on:
+      - ai-ranker-training
+    restart: unless-stopped
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - training-logs:/var/log
+
+volumes:
+  training-logs:
+````
+
+## Developers
+### Installation
+Clone this repository and move inside the project top folder.
+`````
+git clone https://github.com/infn-datacloud/ai-ranker
+cd ai-ranker
+`````
+
+### Setting up environment for local development
+Developers can launch the project locally or using containers.
+In both cases, developers need a MLflow service and a Kafka service. Both can be started using docker.
