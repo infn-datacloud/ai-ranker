@@ -1,7 +1,7 @@
 from kafka.admin import KafkaAdminClient
 
-from logger import create_logger
-from settings import load_inference_settings
+from src.logger import create_logger
+from src.settings import load_inference_settings
 
 logger = create_logger("Delete inference", level="INFO")
 settings = load_inference_settings(logger=logger)

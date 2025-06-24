@@ -1,7 +1,7 @@
-from inference.main import load_data_from_file
-from logger import create_logger
-from settings import load_inference_settings
-from utils.kafka import create_kafka_producer
+from src.inference.main import load_data_from_file
+from src.logger import create_logger
+from src.settings import load_inference_settings
+from src.utils.kafka import create_kafka_producer
 
 logger = create_logger("Populate inference topic", level="INFO")
 settings = load_inference_settings(logger=logger)

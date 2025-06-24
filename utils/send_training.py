@@ -1,7 +1,7 @@
-from logger import create_logger
-from settings import load_training_settings
-from utils import MSG_VERSION, load_local_dataset
-from utils.kafka import create_kafka_producer
+from src.logger import create_logger
+from src.settings import load_training_settings
+from src.utils import MSG_VERSION, load_local_dataset
+from src.utils.kafka import create_kafka_producer
 
 logger = create_logger("Populate training", level="INFO")
 settings = load_training_settings(logger=logger)
