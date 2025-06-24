@@ -87,10 +87,12 @@ class TrainingSettings(CommonSettings):
     """Definition of environment variables related to the Training script."""
 
     CLASSIFICATION_MODELS: dict[str, ClassifierMixin] = Field(
+        default={"RandomForestClassifier": {}},
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
     REGRESSION_MODELS: dict[str, RegressorMixin] = Field(
+        default={"RandomForestRegressor": {}},
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
