@@ -544,6 +544,7 @@ def run(logger: Logger) -> None:
         features=settings.X_FEATURES + settings.Y_REGRESSION_FEATURES,
         remove_outliers=settings.REMOVE_OUTLIERS,
         scaling=settings.SCALING_ENABLE,
+        scaler_file=settings.SCALER_FILE,
     )
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
         x=df[settings.X_FEATURES],
