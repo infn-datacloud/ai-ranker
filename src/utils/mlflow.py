@@ -69,7 +69,7 @@ def log_on_mlflow(
             mlflow.sklearn.log_model(
                 signature=False,
                 sk_model=model,
-                name=model_name,
+                artifact_path=model_name,
                 registered_model_name=model_name,
                 metadata=metadata.model_dump(),
             )
