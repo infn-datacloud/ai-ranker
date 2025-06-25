@@ -38,7 +38,7 @@ def setup_mlflow(*, logger: Logger) -> mlflow.MlflowClient:
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
         return mlflow.MlflowClient()
     except mlflow.exceptions.MlflowException as e:
-        logger.error(e.message)
+        logger.error(e)
         exit(1)
 
 

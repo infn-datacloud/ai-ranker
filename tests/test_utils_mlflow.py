@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import mlflow
 import pandas as pd
 import pytest
+from mlflow.exceptions import MlflowException
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import RobustScaler
 
@@ -290,3 +291,27 @@ def test_get_model_raises_value_error_for_wrong_loader_module():
             ValueError, match="Model .* not in the mlflow.sklearn library"
         ):
             get_model(model_uri=fake_uri)
+
+
+@patch("src.settings.MLFlowSettings", autospec=True)
+@patch("mlflow.set_tracking_uri", side_effect=MlflowException("Test error"))
+def test_setup_mlflow_exception_handling(mock_set_tracking_uri, mock_load_settings):
+    logger = MagicMock()
+
+    mock_settings = MagicMock()
+    mock_settings.MLFLOW_HTTP_REQUEST_TIMEOUT = 10
+    mock_settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES = 3
+    mock_settings.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR = 0.5
+    mock_settings.MLFLOW_HTTP_REQUEST_BACKOFF_JITTER = 0.1
+    mock_settings.MLFLOW_TRACKING_URI = "http://localhost:5000"
+    mock_settings.MLFLOW_EXPERIMENT_NAME = "test-exp"
+    mock_load_settings.return_value = mock_settings
+
+    with pytest.raises(SystemExit) as exc_info:
+        setup_mlflow(logger=logger)
+
+    assert exc_info.value.code == 1
+    logger.error.assert_called_once()
+
+    called_arg = logger.error.call_args[0][0]
+    assert "Test error" in str(called_arg)
