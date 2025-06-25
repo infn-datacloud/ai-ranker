@@ -165,6 +165,7 @@ def predict(
 
     # Send requests to classification and regression endpoints
     try:
+        logger.info("Start classification prediction.")
         classification_response = classification_predict(
             input_data=input_inference,
             model_name=settings.CLASSIFICATION_MODEL_NAME,
@@ -178,6 +179,7 @@ def predict(
             k: NO_PREDICTED_VALUE for k in input_inference.keys()
         }
     try:
+        logger.info("Start regression prediction.")
         regression_response = regression_predict(
             input_data=input_inference,
             model_name=settings.REGRESSION_MODEL_NAME,
