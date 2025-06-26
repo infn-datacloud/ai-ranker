@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "ai-ranker-training"
+name = "ai-ranker"
 version = "0.1.0"
 description = ""
 authors = ["Luca Giommi <luca.giommi@cnaf.infn.it>, Giovanni Savarese <giovanni.savarese@ba.infn.it>"]
