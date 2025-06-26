@@ -83,6 +83,11 @@ def split_and_clean_data(
     return x_train, x_test, y_train, y_test
 
 
+def model_predict_proba_wrapped(x, model, columns):
+    x_df = pd.DataFrame(x, columns=columns)
+    return model.predict_proba(x_df)
+
+
 def get_feature_importance(
     model: BaseEstimator,
     columns: pd.Index,
@@ -135,11 +140,18 @@ def get_feature_importance(
     else:
         try:
             background_data_summarized = shap.sample(x_train_scaled[:50])
-            explainer = shap.KernelExplainer(
-                model.predict_proba, background_data_summarized
+            background_data_summarized = pd.DataFrame(
+                background_data_summarized, columns=columns
             )
-            shap_values = explainer.shap_values(x_train_scaled)
-            # Compute feature importance
+
+            explainer = shap.KernelExplainer(
+                lambda x: model_predict_proba_wrapped(x, model, columns),
+                background_data_summarized,
+            )
+
+            x_train_scaled_df = pd.DataFrame(x_train_scaled, columns=columns)
+            shap_values = explainer.shap_values(x_train_scaled_df)
+
             shap_importance = np.mean(np.abs(shap_values), axis=0)[:, 0]
             if len(shap_importance) != len(columns):
                 logger.error(
@@ -179,26 +191,28 @@ def calculate_classification_metrics(
         )
         exit(1)
     train_metrics = ClassificationMetrics(
-        accuracy=accuracy_score(y_train, y_train_pred),
-        auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
-        f1=f1_score(y_train, y_train_pred, average="binary"),
-        precision=precision_score(y_train, y_train_pred, average="binary"),
-        recall=recall_score(y_train, y_train_pred, average="binary"),
+    accuracy=accuracy_score(y_train, y_train_pred),
+    auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
+    f1=f1_score(y_train, y_train_pred, average="binary", zero_division=0),
+    precision=precision_score(y_train, y_train_pred, average="binary", zero_division=0),
+    recall=recall_score(y_train, y_train_pred, average="binary", zero_division=0),
     )
     logger.debug("Model metrics on the training dataset: %s", train_metrics)
+
     test_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_test, y_test_pred),
         auc=roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
-        f1=f1_score(y_test, y_test_pred, average="binary"),
-        precision=precision_score(y_test, y_test_pred, average="binary"),
-        recall=recall_score(y_test, y_test_pred, average="binary"),
+        f1=f1_score(y_test, y_test_pred, average="binary", zero_division=0),
+        precision=precision_score(y_test, y_test_pred, average="binary", zero_division=0),
+        recall=recall_score(y_test, y_test_pred, average="binary", zero_division=0),
     )
+
     logger.debug("Model metrics on the test dataset: %s", test_metrics)
 
     logger.debug("Confusion matrix:")
     logger.debug(confusion_matrix(y_test, y_test_pred))
     logger.debug("Classification report:")
-    logger.debug(classification_report(y_test, y_test_pred))
+    logger.debug(classification_report(y_test, y_test_pred, zero_division=0))
 
     d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
     d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}

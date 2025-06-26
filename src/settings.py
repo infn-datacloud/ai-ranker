@@ -1,7 +1,7 @@
 from logging import Logger
 from typing import Any
 
-from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+from pydantic import AnyHttpUrl, ConfigDict, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
@@ -9,6 +9,10 @@ from sklearn.utils import all_estimators
 
 class MLFlowSettings(BaseSettings):
     """Definition of environment variables related to the MLFlow configuration."""
+
+    model_config = ConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     MLFLOW_TRACKING_URI: AnyHttpUrl = Field(
         default="http://localhost:5000", description="MLFlow tracking URI."
@@ -33,14 +37,13 @@ class MLFlowSettings(BaseSettings):
         description="Specifies the backoff jitter between MLflow HTTP request failures",
     )
 
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
 
 class CommonSettings(BaseSettings):
     """Common settings"""
+
+    model_config = ConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     LOCAL_MODE: bool = Field(
         default=False, description="Perform the training using local dataset"
@@ -77,11 +80,6 @@ class CommonSettings(BaseSettings):
         default_factory=list, description="List of complex template"
     )
 
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
 
 class TrainingSettings(CommonSettings):
     """Definition of environment variables related to the Training script."""
@@ -113,29 +111,29 @@ class TrainingSettings(CommonSettings):
         default=1.5, description="Multiplication factor for outlier threshold"
     )
     X_FEATURES: list = Field(
-    default=[
-        "cpu_diff",
-        "ram_diff",
-        "storage_diff",
-        "instances_diff",
-        "floatingips_diff",
-        "gpu",
-        "test_failure_perc_30d",
-        "overbooking_ram",
-        "avg_success_time",
-        "avg_failure_time",
-        "failure_percentage",
-        "complexity",
-    ],
-    description="List of features to use as X"
-)
+        default=[
+            "cpu_diff",
+            "ram_diff",
+            "storage_diff",
+            "instances_diff",
+            "floatingips_diff",
+            "gpu",
+            "test_failure_perc_30d",
+            "overbooking_ram",
+            "avg_success_time",
+            "avg_failure_time",
+            "failure_percentage",
+            "complexity",
+        ],
+        description="List of features to use as X",
+    )
     Y_CLASSIFICATION_FEATURES: list = Field(
         default=["status"],
-        description="List of features to use as Y for classification"
+        description="List of features to use as Y for classification",
     )
     Y_REGRESSION_FEATURES: list = Field(
         default=["deployment_time"],
-        description="List of features to use as Y for regression"
+        description="List of features to use as Y for regression",
     )
 
     SCALING_ENABLE: bool = Field(

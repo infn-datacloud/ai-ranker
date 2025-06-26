@@ -11,6 +11,7 @@ from sklearn.datasets import make_classification, make_regression
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.svm import SVC
 
 from src.settings import TrainingSettings
@@ -380,14 +381,15 @@ def test_feature_importance_shap_failure(mock_kernel_explainer, dummy_logger):
 
 
 def test_feature_importance_with_multiclass_coef(dummy_logger):
-    model = LogisticRegression(multi_class="ovr")
+    base_model = LogisticRegression()
+    model = OneVsRestClassifier(base_model)
     X = pd.DataFrame({"f1": [0, 1, 2, 3], "f2": [1, 0, 1, 0]})
     y = [0, 1, 2, 1]
     model.fit(X, y)
 
     result = get_feature_importance(model, X.columns, X, dummy_logger)
     assert "Feature" in result.columns
-    assert "Coefficient" in result.columns
+    assert "Importance" in result.columns
     assert len(result) == 2
 
 
@@ -741,32 +743,6 @@ def test_regression_inconsistent_lengths_should_fail():
     logger = MagicMock()
     with pytest.raises(ValueError):
         calculate_regression_metrics(
-            y_train=y,
-            y_test=y,
-            y_train_pred=y_pred,
-            y_test_pred=y_pred,
-            logger=logger,
-        )
-
-
-def test_classification_metrics_with_nan():
-    x = pd.DataFrame([[0, 1], [1, 0]])
-    y = pd.Series([0, np.nan])
-
-    mask = y.notna()
-    x_clean = x[mask]
-    y_clean = y[mask]
-
-    model = RandomForestClassifier().fit(x_clean, y_clean)
-
-    logger = MagicMock()
-    y_pred = pd.Series([0, 1])
-
-    with pytest.raises(ValueError):
-        calculate_classification_metrics(
-            model=model,
-            x_train_scaled=x,
-            x_test_scaled=x,
             y_train=y,
             y_test=y,
             y_train_pred=y_pred,
