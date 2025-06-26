@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
-from sklearn.base import RegressorMixin
+from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
 
 from src import settings
@@ -98,17 +98,24 @@ def test_load_mlflow_settings_validation_error(mock_mlflow_settings):
     logger.error.assert_called_once_with(mock_mlflow_settings.side_effect)
 
 
-def test_validate_models_type_error():
-    classifiers = dict(all_estimators(type_filter="classifier"))
-    model_name, model_class = next(iter(classifiers.items()))
+@pytest.mark.parametrize(
+    "type_filter, wrong_base_class, expected_type",
+    [
+        ("classifier", RegressorMixin, "classifier"),
+        ("regressor", ClassifierMixin, "regressor"),
+    ],
+)
+def test_validate_models_type_error(type_filter, wrong_base_class, expected_type):
+    estimators = dict(all_estimators(type_filter=type_filter))
+    model_name, _ = next(iter(estimators.items()))
 
     input_models = {model_name: {}}
 
-    wrong_base_class = RegressorMixin
-
     with pytest.raises(TypeError) as excinfo:
         settings.TrainingSettings._TrainingSettings__validate_models(
-            input_models, "classifier", wrong_base_class
+            input_models, expected_type, wrong_base_class
         )
 
-    assert f"The model {model_name} is not a classifier model" in str(excinfo.value)
+    assert f"The model {model_name} is not a {expected_type} model" in str(
+        excinfo.value
+    )
