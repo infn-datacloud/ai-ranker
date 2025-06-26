@@ -74,7 +74,7 @@ class CommonSettings(BaseSettings):
     )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
-        default_factory=list, decription="List of complex template"
+        default_factory=list, description="List of complex template"
     )
 
     class Config:
