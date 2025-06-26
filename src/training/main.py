@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import shap
 from kafka.errors import NoBrokersAvailable
-from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier, is_regressor
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -18,7 +18,12 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, cross_val_score, train_test_split
+from sklearn.model_selection import (
+    KFold,
+    StratifiedKFold,
+    cross_val_score,
+    train_test_split,
+)
 from sklearn.preprocessing import RobustScaler
 
 from src.processing import DF_TIMESTAMP, preprocessing
@@ -275,7 +280,7 @@ def train_model(
     y_test_pred = model.predict(x_test_scaled)
 
     # Calculate metrics
-    if issubclass(type(model), ClassifierMixin):
+    if is_classifier(model):
         metrics = calculate_classification_metrics(
             model=model,
             x_train_scaled=x_train_scaled,
@@ -286,7 +291,7 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
-    elif issubclass(type(model), RegressorMixin):
+    elif is_regressor(model):
         metrics = calculate_regression_metrics(
             y_train=y_train,
             y_test=y_test,
@@ -328,8 +333,12 @@ def kfold_cross_validation(
     x = x_train
     y = y_train
 
-    # Initialize KFold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    # Initialize StratifiedKFold/KFold
+    first_model = next(iter(models.values()))
+    if is_classifier(first_model):
+        kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    if is_regressor(first_model):
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=SEED)
 
     # Dictionary to store scores
     mean_scores = {}
@@ -344,7 +353,7 @@ def kfold_cross_validation(
             x_scaled = x
 
         # Perform cross-validation
-        scoring = "roc_auc" if issubclass(type(model), ClassifierMixin) else "r2"
+        scoring = "roc_auc" if is_classifier(model) else "r2"
         scores = cross_val_score(
             model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
         )

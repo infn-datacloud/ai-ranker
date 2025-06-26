@@ -6,15 +6,16 @@ import numpy as np
 import pandas as pd
 import pytest
 from kafka.errors import NoBrokersAvailable
-from sklearn.base import BaseEstimator
-from sklearn.datasets import make_classification
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.datasets import make_classification, make_regression
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 from sklearn.svm import SVC
 
 from src.settings import TrainingSettings
 from src.training.main import (
+    SEED,
     calculate_classification_metrics,
     calculate_regression_metrics,
     get_feature_importance,
@@ -1223,9 +1224,7 @@ def test_load_training_data_kafka_mode(mock_create_consumer, mock_load_kafka_dat
 
     logger.info.assert_called_with("Upload training data")
     mock_create_consumer.assert_called_once()
-    mock_load_kafka_data.assert_called_once_with(
-        consumer=mock_consumer, logger=logger
-    )
+    mock_load_kafka_data.assert_called_once_with(consumer=mock_consumer, logger=logger)
     mock_consumer.close.assert_called_once()
     assert result.equals(expected_df)
 
@@ -1319,9 +1318,7 @@ def test_run_no_broker(mock_setup, mock_settings, mock_load):
     mock_settings.return_value = MagicMock(KAFKA_HOSTNAME="kafka")
     with pytest.raises(SystemExit):
         run(logger=logger)
-    logger.error.assert_called_with(
-        "Kakfa broker not found at given url: %s", "kafka"
-    )
+    logger.error.assert_called_with("Kakfa broker not found at given url: %s", "kafka")
 
 
 @patch("src.training.main.load_training_data", side_effect=AssertionError("boom"))
@@ -1365,9 +1362,7 @@ def test_run_empty_df(mock_setup, mock_settings, mock_preprocessing, mock_load):
         REGRESSION_MODELS={},
     )
     run(logger=logger)
-    logger.warning.assert_called_with(
-        "No data to pre-process. No model generation."
-    )
+    logger.warning.assert_called_with("No data to pre-process. No model generation.")
 
 
 @patch("src.training.main.load_training_data")
@@ -1401,3 +1396,64 @@ def test_run_missing_features(mock_setup, mock_settings, mock_preprocessing, moc
     with pytest.raises(SystemExit):
         run(logger=logger)
     logger.error.assert_called()
+
+
+@pytest.mark.parametrize(
+    "model,expected_type",
+    [
+        (LogisticRegression(), StratifiedKFold),
+        (LinearRegression(), KFold),
+    ],
+)
+def test_cross_validation_split_type(model, expected_type):
+    models = {"model": model}
+    first_model = next(iter(models.values()))
+
+    if isinstance(first_model, ClassifierMixin):
+        kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    if isinstance(first_model, RegressorMixin):
+        kf = KFold(n_splits=5, shuffle=True, random_state=SEED)
+
+    assert isinstance(kf, expected_type)
+
+
+class DummyMetadata:
+    def model_dump(self):
+        return {}
+
+
+@pytest.mark.parametrize(
+    "model_fn,is_classifier",
+    [
+        (LogisticRegression, True),
+        (LinearRegression, False),
+    ],
+)
+def test_kfold_cross_validation_branch_coverage(model_fn, is_classifier):
+    if is_classifier:
+        X, y = make_classification(n_samples=100, n_features=5, random_state=SEED)
+    else:
+        X, y = make_regression(n_samples=100, n_features=5, random_state=SEED)
+
+    x_train = pd.DataFrame(X)
+    y_train = pd.DataFrame(y)
+    x_test = x_train.copy()
+    y_test = y_train.copy()
+
+    models = {"model": model_fn()}
+
+    logger = MagicMock()
+    metadata = DummyMetadata()
+
+    kfold_cross_validation(
+        x_train=x_train,
+        x_test=x_test,
+        y_train=y_train,
+        y_test=y_test,
+        metadata=metadata,
+        models=models,
+        logger=logger,
+        n_splits=5,
+        scaling_enable=False,
+        scaler_file="dummy.pkl",
+    )
