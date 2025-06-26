@@ -20,11 +20,6 @@ from src.utils.mlflow import (
 
 
 @pytest.fixture
-def mock_logger():
-    return MagicMock()
-
-
-@pytest.fixture
 def mock_metadata():
     return MetaData(
         start_time="2024-01-01T00:00:00",
@@ -39,17 +34,19 @@ def mock_metadata():
 
 @patch("src.utils.mlflow.mlflow")
 @patch("src.utils.mlflow.load_mlflow_settings")
-def test_setup_mlflow(mock_load_settings, mock_mlflow, mock_logger):
+def test_setup_mlflow(mock_load_settings, mock_mlflow):
+    logger = MagicMock()
     mock_settings = MagicMock()
     mock_load_settings.return_value = mock_settings
-    client = setup_mlflow(logger=mock_logger)
+    client = setup_mlflow(logger=logger)
     assert mock_mlflow.set_tracking_uri.called
     assert mock_mlflow.set_experiment.called
     assert isinstance(client, MagicMock)
 
 
 @patch("src.utils.mlflow.mlflow")
-def test_log_on_mlflow(mock_mlflow, mock_logger, mock_metadata):
+def test_log_on_mlflow(mock_mlflow, mock_metadata):
+    logger = MagicMock()
     model = LogisticRegression()
     model_params = {"C": 1.0}
     metrics = {"accuracy": 0.9}
@@ -67,7 +64,7 @@ def test_log_on_mlflow(mock_mlflow, mock_logger, mock_metadata):
         scaling_enable=True,
         scaler_file=scaler_file,
         scaler_bytes=scaler_bytes,
-        logger=mock_logger,
+        logger=logger,
     )
 
     assert mock_mlflow.log_params.called
@@ -190,7 +187,8 @@ def test_log_on_mlflow_failure(mock_start_run):
 
 
 @patch("src.utils.mlflow.mlflow")
-def test_log_on_mlflow_scaling_disabled(mock_mlflow, mock_logger, mock_metadata):
+def test_log_on_mlflow_scaling_disabled(mock_mlflow, mock_metadata):
+    logger = MagicMock()
     model = LogisticRegression()
     model_params = {"C": 1.0}
     metrics = {"accuracy": 0.9}
@@ -206,7 +204,7 @@ def test_log_on_mlflow_scaling_disabled(mock_mlflow, mock_logger, mock_metadata)
         scaling_enable=False,
         scaler_file=None,
         scaler_bytes=None,
-        logger=mock_logger,
+        logger=logger,
     )
 
     assert not any(
@@ -251,7 +249,6 @@ def test_get_model_uri_raises_value_error():
 
 def test_get_model_uri_raises_value_error_version_not_found():
     client = MagicMock()
-
     client.search_model_versions.return_value = [
         MagicMock(version=1),
         MagicMock(version=2),
@@ -263,7 +260,6 @@ def test_get_model_uri_raises_value_error_version_not_found():
 
 def test_get_model_raises_value_error_on_load_failure():
     fake_uri = "fake_uri"
-
     mock_model = MagicMock()
     mock_model.metadata.flavors.keys.return_value = {"sklearn"}
     mock_model.loader_module = "mlflow.sklearn"
@@ -297,7 +293,6 @@ def test_get_model_raises_value_error_for_wrong_loader_module():
 @patch("mlflow.set_tracking_uri", side_effect=MlflowException("Test error"))
 def test_setup_mlflow_exception_handling(mock_set_tracking_uri, mock_load_settings):
     logger = MagicMock()
-
     mock_settings = MagicMock()
     mock_settings.MLFLOW_HTTP_REQUEST_TIMEOUT = 10
     mock_settings.MLFLOW_HTTP_REQUEST_MAX_RETRIES = 3

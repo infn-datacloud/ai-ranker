@@ -1174,7 +1174,7 @@ def test_training_phase_multiple_models(mock_kfold_cv):
 
 @patch("src.training.main.load_local_dataset")
 def test_load_training_data_local_mode_with_dataset(mock_load_local_dataset):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     expected_df = pd.DataFrame({"a": [1]})
     mock_load_local_dataset.return_value = expected_df
 
@@ -1182,16 +1182,16 @@ def test_load_training_data_local_mode_with_dataset(mock_load_local_dataset):
         local_mode=True,
         local_dataset="test.csv",
         local_dataset_version="1.0.0",
-        logger=mock_logger,
+        logger=logger,
     )
 
-    mock_logger.info.assert_called_with("Upload training data")
+    logger.info.assert_called_with("Upload training data")
     mock_load_local_dataset.assert_called_once()
     assert result.equals(expected_df)
 
 
 def test_load_training_data_local_mode_without_dataset():
-    mock_logger = MagicMock()
+    logger = MagicMock()
 
     with pytest.raises(
         ValueError, match="LOCAL_DATASET environment variable has not been set."
@@ -1199,16 +1199,16 @@ def test_load_training_data_local_mode_without_dataset():
         load_training_data(
             local_mode=True,
             local_dataset=None,
-            logger=mock_logger,
+            logger=logger,
         )
 
-    mock_logger.info.assert_called_with("Upload training data")
+    logger.info.assert_called_with("Upload training data")
 
 
 @patch("src.training.main.load_dataset_from_kafka_messages")
 @patch("src.training.main.create_kafka_consumer")
 def test_load_training_data_kafka_mode(mock_create_consumer, mock_load_kafka_data):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     mock_consumer = MagicMock()
     expected_df = pd.DataFrame({"b": [2]})
     mock_create_consumer.return_value = mock_consumer
@@ -1218,13 +1218,13 @@ def test_load_training_data_kafka_mode(mock_create_consumer, mock_load_kafka_dat
         local_mode=False,
         kafka_server_url="localhost:9092",
         kafka_topic="my-topic",
-        logger=mock_logger,
+        logger=logger,
     )
 
-    mock_logger.info.assert_called_with("Upload training data")
+    logger.info.assert_called_with("Upload training data")
     mock_create_consumer.assert_called_once()
     mock_load_kafka_data.assert_called_once_with(
-        consumer=mock_consumer, logger=mock_logger
+        consumer=mock_consumer, logger=logger
     )
     mock_consumer.close.assert_called_once()
     assert result.equals(expected_df)
@@ -1246,7 +1246,7 @@ def test_run_success(
     mock_split_and_clean_data,
     mock_training_phase,
 ):
-    mock_logger = MagicMock()
+    logger = MagicMock()
 
     # Settings mock
     mock_settings = MagicMock()
@@ -1284,7 +1284,7 @@ def test_run_success(
     mock_split_and_clean_data.return_value = ("x_train", "x_test", "y_train", "y_test")
 
     # Run the function
-    run(logger=mock_logger)
+    run(logger=logger)
 
     # Assertions
     mock_load_training_settings.assert_called_once()
@@ -1294,32 +1294,32 @@ def test_run_success(
     assert mock_metadata.call_count == 2
     assert mock_split_and_clean_data.call_count == 2
     assert mock_training_phase.call_count == 2
-    mock_logger.info.assert_any_call("Classification phase started")
-    mock_logger.info.assert_any_call("Classification phase ended")
-    mock_logger.info.assert_any_call("Regression phase started")
-    mock_logger.info.assert_any_call("Regression phase ended")
+    logger.info.assert_any_call("Classification phase started")
+    logger.info.assert_any_call("Classification phase ended")
+    logger.info.assert_any_call("Regression phase started")
+    logger.info.assert_any_call("Regression phase ended")
 
 
 @patch("src.training.main.load_training_data", side_effect=FileNotFoundError)
 @patch("src.training.main.load_training_settings")
 @patch("src.training.main.setup_mlflow")
 def test_run_file_not_found(mock_setup, mock_settings, mock_load):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     mock_settings.return_value = MagicMock(LOCAL_DATASET="missing.csv")
     with pytest.raises(SystemExit):
-        run(logger=mock_logger)
-    mock_logger.error.assert_called_with("File '%s' not found", "missing.csv")
+        run(logger=logger)
+    logger.error.assert_called_with("File '%s' not found", "missing.csv")
 
 
 @patch("src.training.main.load_training_data", side_effect=NoBrokersAvailable)
 @patch("src.training.main.load_training_settings")
 @patch("src.training.main.setup_mlflow")
 def test_run_no_broker(mock_setup, mock_settings, mock_load):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     mock_settings.return_value = MagicMock(KAFKA_HOSTNAME="kafka")
     with pytest.raises(SystemExit):
-        run(logger=mock_logger)
-    mock_logger.error.assert_called_with(
+        run(logger=logger)
+    logger.error.assert_called_with(
         "Kakfa broker not found at given url: %s", "kafka"
     )
 
@@ -1328,13 +1328,13 @@ def test_run_no_broker(mock_setup, mock_settings, mock_load):
 @patch("src.training.main.load_training_settings")
 @patch("src.training.main.setup_mlflow")
 def test_run_assertion_error(mock_setup, mock_settings, mock_load):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     mock_settings.return_value = MagicMock()
     with pytest.raises(SystemExit):
-        run(logger=mock_logger)
-    assert mock_logger.error.called
-    assert isinstance(mock_logger.error.call_args[0][0], AssertionError)
-    assert str(mock_logger.error.call_args[0][0]) == "boom"
+        run(logger=logger)
+    assert logger.error.called
+    assert isinstance(logger.error.call_args[0][0], AssertionError)
+    assert str(logger.error.call_args[0][0]) == "boom"
 
 
 @patch("src.training.main.load_training_data")
@@ -1342,7 +1342,7 @@ def test_run_assertion_error(mock_setup, mock_settings, mock_load):
 @patch("src.training.main.load_training_settings")
 @patch("src.training.main.setup_mlflow")
 def test_run_empty_df(mock_setup, mock_settings, mock_preprocessing, mock_load):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01", "2024-01-02"])})
     mock_load.return_value = df
     mock_settings.return_value = MagicMock(
@@ -1364,8 +1364,8 @@ def test_run_empty_df(mock_setup, mock_settings, mock_preprocessing, mock_load):
         CLASSIFICATION_MODELS={},
         REGRESSION_MODELS={},
     )
-    run(logger=mock_logger)
-    mock_logger.warning.assert_called_with(
+    run(logger=logger)
+    logger.warning.assert_called_with(
         "No data to pre-process. No model generation."
     )
 
@@ -1375,7 +1375,7 @@ def test_run_empty_df(mock_setup, mock_settings, mock_preprocessing, mock_load):
 @patch("src.training.main.load_training_settings")
 @patch("src.training.main.setup_mlflow")
 def test_run_missing_features(mock_setup, mock_settings, mock_preprocessing, mock_load):
-    mock_logger = MagicMock()
+    logger = MagicMock()
     df = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01"]), "f1": [1]})
     mock_load.return_value = df
     mock_preprocessing.return_value = df
@@ -1399,5 +1399,5 @@ def test_run_missing_features(mock_setup, mock_settings, mock_preprocessing, moc
         REGRESSION_MODELS={},
     )
     with pytest.raises(SystemExit):
-        run(logger=mock_logger)
-    mock_logger.error.assert_called()
+        run(logger=logger)
+    logger.error.assert_called()

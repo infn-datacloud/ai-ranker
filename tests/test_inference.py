@@ -1395,12 +1395,12 @@ def test_run_logs_info_if_no_providers(
     output_consumer = []
     mock_connect_consumers_or_load_data.return_value = (input_consumer, output_consumer)
 
-    mock_logger = MagicMock()
+    logger = MagicMock()
 
-    run(logger=mock_logger)
+    run(logger=logger)
 
-    mock_logger.info.assert_any_call("No 'providers' available for this request")
-    mock_logger.error.assert_any_call("Inference process aborted")
+    logger.info.assert_any_call("No 'providers' available for this request")
+    logger.error.assert_any_call("Inference process aborted")
 
 
 @patch("src.inference.main.write_data_to_file")
@@ -1431,9 +1431,9 @@ def test_run_sets_res_exact_to_zero_if_instance_req_is_zero(
     output_consumer = []
     mock_connect_consumers_or_load_data.return_value = (input_consumer, output_consumer)
 
-    mock_logger = MagicMock()
+    logger = MagicMock()
 
-    run(logger=mock_logger)
+    run(logger=logger)
 
-    mock_logger.info.assert_any_call("Only one provider. No inference needed")
+    logger.info.assert_any_call("Only one provider. No inference needed")
     mock_write_data_to_file.assert_called_once()

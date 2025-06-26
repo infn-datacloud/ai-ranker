@@ -13,14 +13,14 @@ def test_training_run_called(
     mock_parse_args.return_value = MagicMock(
         training=True, inference=False, loglevel="info"
     )
-    mock_logger = MagicMock()
-    mock_create_logger.return_value = mock_logger
+    logger = MagicMock()
+    mock_create_logger.return_value = logger
 
     main.main()
 
     mock_training_run.assert_called_once()
     args_passed = mock_training_run.call_args[0]
-    assert args_passed[0] is mock_logger
+    assert args_passed[0] is logger
 
 
 @patch("src.main.inference_run")
@@ -33,14 +33,14 @@ def test_inference_run_called(
     mock_parse_args.return_value = MagicMock(
         training=False, inference=True, loglevel="debug"
     )
-    mock_logger = MagicMock()
-    mock_create_logger.return_value = mock_logger
+    logger = MagicMock()
+    mock_create_logger.return_value = logger
 
     main.main()
 
     mock_inference_run.assert_called_once()
     args_passed = mock_inference_run.call_args[0]
-    assert args_passed[0] is mock_logger
+    assert args_passed[0] is logger
 
 
 @patch("src.main.inference_run")
@@ -53,11 +53,11 @@ def test_warning_logged_if_no_flags(
     mock_parse_args.return_value = MagicMock(
         training=False, inference=False, loglevel="warning"
     )
-    mock_logger = MagicMock()
-    mock_create_logger.return_value = mock_logger
+    logger = MagicMock()
+    mock_create_logger.return_value = logger
 
     main.main()
 
-    mock_logger.warning.assert_called_once_with(
+    logger.warning.assert_called_once_with(
         "Neither --training or --inference arguments have been defined"
     )
