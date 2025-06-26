@@ -37,6 +37,6 @@ class RegressionMetrics(BaseModel):
     """Metrics stored in the MLFlow model registry."""
 
     mse: float = Field(description="Mean Square Error")
-    rmse: float = Field(descrption="Root Mean Square Error")
+    rmse: float = Field(description="Root Mean Square Error")
     mae: float = Field(description="Mean Absolute Error")
     r2: float = Field(description="R2 score")

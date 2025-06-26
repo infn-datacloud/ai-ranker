@@ -243,7 +243,7 @@ def test_get_model_uri_raises_value_error():
 
     with pytest.raises(ValueError, match=r"Model .* not found"):
         get_model_uri(
-            model_name="modello_inesistente", model_version="9999", client=client
+            model_name="not_existing_model", model_version="9999", client=client
         )
 
 
@@ -255,7 +255,7 @@ def test_get_model_uri_raises_value_error_version_not_found():
     ]
 
     with pytest.raises(ValueError, match=r"Version .* not found"):
-        get_model_uri(model_name="modello_esistente", model_version=9999, client=client)
+        get_model_uri(model_name="existing_model", model_version=9999, client=client)
 
 
 def test_get_model_raises_value_error_on_load_failure():
@@ -268,7 +268,7 @@ def test_get_model_raises_value_error_on_load_failure():
         patch("src.utils.mlflow.load_model", return_value=mock_model),
         patch("mlflow.sklearn.load_model") as mock_sklearn_load,
     ):
-        mock_sklearn_load.side_effect = Exception("Errore simulato")
+        mock_sklearn_load.side_effect = Exception("Simulated error")
 
         with pytest.raises(
             ValueError, match=f"Model not found at given uri '{fake_uri}'"
