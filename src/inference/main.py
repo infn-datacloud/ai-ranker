@@ -9,7 +9,7 @@ from kafka.errors import NoBrokersAvailable
 from mlflow import MlflowClient
 from sklearn.preprocessing import RobustScaler
 
-from processing import (
+from src.processing import (
     DF_AVG_FAIL_TIME,
     DF_AVG_SUCCESS_TIME,
     DF_FAIL_PERC,
@@ -20,9 +20,9 @@ from processing import (
     calculate_derived_properties,
     preprocessing,
 )
-from settings import InferenceSettings, load_inference_settings
-from training.main import load_training_data
-from utils import (
+from src.settings import InferenceSettings, load_inference_settings
+from src.training.main import load_training_data
+from src.utils import (
     MSG_DEP_UUID,
     MSG_INSTANCE_REQ,
     MSG_INSTANCES_WITH_EXACT_FLAVORS,
@@ -34,8 +34,8 @@ from utils import (
     load_data_from_file,
     write_data_to_file,
 )
-from utils.kafka import create_kafka_consumer, create_kafka_producer
-from utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
+from src.utils.kafka import create_kafka_consumer, create_kafka_producer
+from src.utils.mlflow import get_model, get_model_uri, get_scaler, setup_mlflow
 
 CLASSIFICATION_SUCCESS_IDX = 0
 NO_PREDICTED_VALUE = -1
@@ -52,7 +52,7 @@ def create_inference_input(
     Filter features.
     """
     input_features = model.feature_names_in_
-    values = [[data[k] for k in input_features if k in data]]
+    values = [[data.get(k, np.nan) for k in input_features]]
     x_new = pd.DataFrame(values, columns=input_features)
     if scaler is not None:
         return pd.DataFrame(
@@ -165,6 +165,7 @@ def predict(
 
     # Send requests to classification and regression endpoints
     try:
+        logger.info("Start classification prediction.")
         classification_response = classification_predict(
             input_data=input_inference,
             model_name=settings.CLASSIFICATION_MODEL_NAME,
@@ -178,6 +179,7 @@ def predict(
             k: NO_PREDICTED_VALUE for k in input_inference.keys()
         }
     try:
+        logger.info("Start regression prediction.")
         regression_response = regression_predict(
             input_data=input_inference,
             model_name=settings.REGRESSION_MODEL_NAME,
@@ -326,10 +328,14 @@ def create_message(
     """Create a dict with the deployment uuid and the list of ranked providers."""
     ranked_providers = []
     for provider, values in sorted_results.items():
+        data = None
         for i in input_data:
             if f"{i[MSG_PROVIDER_NAME]}-{i[MSG_REGION_NAME]}" == provider:
                 data = {**values, **i}
                 break
+        if data is None:
+            logger.error(f"No matching input_data entry for provider key '{provider}'")
+            raise ValueError(f"No matching input_data entry for provider key '{provider}'")
         ranked_providers.append(data)
     message = {MSG_DEP_UUID: deployment_uuid, "ranked_providers": ranked_providers}
     logger.debug("Output message: %s", message)
@@ -365,17 +371,17 @@ def connect_consumers_or_load_data(
         if settings.LOCAL_IN_MESSAGES is None:
             logger.error("LOCAL_IN_MESSAGES environment variable has not been set.")
             exit(1)
-            try:
-                inputs = load_data_from_file(
-                    filename=settings.LOCAL_IN_MESSAGES, logger=logger
-                )
-                outputs = load_data_from_file(
-                    filename=settings.LOCAL_OUT_MESSAGES, logger=logger
-                )
-                return inputs, outputs
-            except FileNotFoundError:
-                logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
-                exit(1)
+        try:
+            inputs = load_data_from_file(
+                filename=settings.LOCAL_IN_MESSAGES, logger=logger
+            )
+            outputs = load_data_from_file(
+                filename=settings.LOCAL_OUT_MESSAGES, logger=logger
+            )
+            return inputs, outputs
+        except FileNotFoundError:
+            logger.error("File '%s' not found", settings.LOCAL_IN_MESSAGES)
+            exit(1)
     try:
         input_consumer = create_kafka_consumer(
             kafka_server_url=settings.KAFKA_HOSTNAME,
@@ -404,7 +410,12 @@ def run(logger: Logger) -> None:
     input_consumer, output_consumer = connect_consumers_or_load_data(
         settings=settings, logger=logger
     )
-    processed_dep_uuids = [message.value[MSG_DEP_UUID] for message in output_consumer]
+    if not settings.LOCAL_MODE:
+        processed_dep_uuids = [
+            message.value[MSG_DEP_UUID] for message in output_consumer
+        ]
+    else:
+        processed_dep_uuids = [message[MSG_DEP_UUID] for message in output_consumer]
 
     # Listen for new messages from the inference topic
     logger.info("Start listening for new messages")

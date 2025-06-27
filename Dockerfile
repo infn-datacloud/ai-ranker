@@ -1,5 +1,5 @@
-ARG PYTHON_VERSION=3.10
-ARG POETRY_VERSION=1.8.3
+ARG PYTHON_VERSION=3.11
+ARG POETRY_VERSION=2.1.3
 
 # Create requirements.txt from poetry dependencies
 FROM ghcr.io/withlogicco/poetry:${POETRY_VERSION}-python-${PYTHON_VERSION}-slim AS requirements

@@ -1,6 +1,6 @@
-from logger import create_logger
-from settings import load_inference_settings
-from utils.kafka import create_kafka_consumer
+from src.logger import create_logger
+from src.settings import load_inference_settings
+from src.utils.kafka import create_kafka_consumer
 
 logger = create_logger("Read inference", level="INFO")
 settings = load_inference_settings(logger=logger)

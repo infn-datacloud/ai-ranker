@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import shap
 from kafka.errors import NoBrokersAvailable
-from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, is_classifier, is_regressor
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -18,15 +18,20 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, cross_val_score, train_test_split
+from sklearn.model_selection import (
+    KFold,
+    StratifiedKFold,
+    cross_val_score,
+    train_test_split,
+)
 from sklearn.preprocessing import RobustScaler
 
-from processing import DF_TIMESTAMP, preprocessing
-from settings import TrainingSettings, load_training_settings
-from training.models import ClassificationMetrics, MetaData, RegressionMetrics
-from utils import load_dataset_from_kafka_messages, load_local_dataset
-from utils.kafka import create_kafka_consumer
-from utils.mlflow import log_on_mlflow, setup_mlflow
+from src.processing import DF_TIMESTAMP, preprocessing
+from src.settings import TrainingSettings, load_training_settings
+from src.training.models import ClassificationMetrics, MetaData, RegressionMetrics
+from src.utils import load_dataset_from_kafka_messages, load_local_dataset
+from src.utils.kafka import create_kafka_consumer
+from src.utils.mlflow import log_on_mlflow, setup_mlflow
 
 SEED = 42
 
@@ -57,6 +62,32 @@ def remove_outliers(
     return filtered[x.columns], filtered[y.columns]
 
 
+def split_and_clean_data(
+    *, x: pd.DataFrame, y: pd.DataFrame, settings: TrainingSettings
+):
+    """Divide the dataset in training and test sets and remove outliers if enabled.
+
+    Remove outliers only from the train set.
+    """
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=settings.TEST_SIZE, random_state=SEED
+    )
+    if settings.REMOVE_OUTLIERS:
+        x_train, y_train = remove_outliers(
+            x_train,
+            y_train,
+            q1=settings.Q1_FACTOR,
+            q3=settings.Q3_FACTOR,
+            k=settings.THRESHOLD_FACTOR,
+        )
+    return x_train, x_test, y_train, y_test
+
+
+def model_predict_proba_wrapped(x, model, columns):
+    x_df = pd.DataFrame(x, columns=columns)
+    return model.predict_proba(x_df)
+
+
 def get_feature_importance(
     model: BaseEstimator,
     columns: pd.Index,
@@ -64,9 +95,21 @@ def get_feature_importance(
     logger: Logger,
 ) -> pd.DataFrame:
     """Calculate feature importance in different ways depending on the model"""
+
+    if x_train_scaled.empty:
+        logger.error("Input data 'x_train_scaled' is empty.")
+        exit(1)
+
     # Case 1: Models with attribute `feature_importances_`
     if hasattr(model, "feature_importances_"):
         feature_importances = model.feature_importances_
+        if len(feature_importances) != len(columns):
+            logger.error(
+                "Length mismatch: feature_importances_ has length %d, but columns has length %d",
+                len(feature_importances),
+                len(columns),
+            )
+            exit(1)
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Importance": feature_importances}
         ).sort_values(by="Importance", ascending=False)
@@ -77,6 +120,15 @@ def get_feature_importance(
     # Case 2: Models like Lasso (coefficient)
     elif hasattr(model, "coef_"):
         coef = model.coef_
+        if coef.ndim > 1:
+            coef = np.mean(np.abs(coef), axis=0)
+        if len(coef) != len(columns):
+            logger.error(
+                "Length mismatch: coef_ has length %d, but columns has length %d",
+                len(coef),
+                len(columns),
+            )
+            exit(1)
         feature_importance_df = pd.DataFrame(
             {"Feature": columns, "Coefficient": coef}
         ).sort_values(by="Coefficient", ascending=False)
@@ -87,15 +139,27 @@ def get_feature_importance(
     # Case 3: Models without `feature_importances_` or `coef_`, use SHAP
     else:
         try:
-            # If the model is not a tree use KernelExplainer
             background_data_summarized = shap.sample(x_train_scaled[:50])
-            explainer = shap.KernelExplainer(
-                model.predict_proba, background_data_summarized
+            background_data_summarized = pd.DataFrame(
+                background_data_summarized, columns=columns
             )
-            shap_values = explainer.shap_values(x_train_scaled)
-            shap.summary_plot(shap_values, x_train_scaled)
-            # Compute feature importance
+
+            explainer = shap.KernelExplainer(
+                lambda x: model_predict_proba_wrapped(x, model, columns),
+                background_data_summarized,
+            )
+
+            x_train_scaled_df = pd.DataFrame(x_train_scaled, columns=columns)
+            shap_values = explainer.shap_values(x_train_scaled_df)
+
             shap_importance = np.mean(np.abs(shap_values), axis=0)[:, 0]
+            if len(shap_importance) != len(columns):
+                logger.error(
+                    "Length mismatch: SHAP importance has length %d, but columns has length %d",
+                    len(shap_importance),
+                    len(columns),
+                )
+                exit(1)
             feature_importance_df = pd.DataFrame(
                 {"Feature": columns, "Importance": shap_importance}
             ).sort_values(by="Importance", ascending=False)
@@ -120,27 +184,35 @@ def calculate_classification_metrics(
 ) -> dict[str, float]:
     """Compute Metrics on a Classification Model."""
     logger.info("Calculate classification metrics")
+    if not hasattr(model, "predict_proba"):
+        logger.error(
+            "The model %s does not support predict_proba for AUC computation.",
+            model.__class__.__name__,
+        )
+        exit(1)
     train_metrics = ClassificationMetrics(
-        accuracy=accuracy_score(y_train, y_train_pred),
-        auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
-        f1=f1_score(y_train, y_train_pred, average="binary"),
-        precision=precision_score(y_train, y_train_pred, average="binary"),
-        recall=recall_score(y_train, y_train_pred, average="binary"),
+    accuracy=accuracy_score(y_train, y_train_pred),
+    auc=roc_auc_score(y_train, model.predict_proba(x_train_scaled)[:, 1]),
+    f1=f1_score(y_train, y_train_pred, average="binary", zero_division=0),
+    precision=precision_score(y_train, y_train_pred, average="binary", zero_division=0),
+    recall=recall_score(y_train, y_train_pred, average="binary", zero_division=0),
     )
     logger.debug("Model metrics on the training dataset: %s", train_metrics)
+
     test_metrics = ClassificationMetrics(
         accuracy=accuracy_score(y_test, y_test_pred),
         auc=roc_auc_score(y_test, model.predict_proba(x_test_scaled)[:, 1]),
-        f1=f1_score(y_test, y_test_pred, average="binary"),
-        precision=precision_score(y_test, y_test_pred, average="binary"),
-        recall=recall_score(y_test, y_test_pred, average="binary"),
+        f1=f1_score(y_test, y_test_pred, average="binary", zero_division=0),
+        precision=precision_score(y_test, y_test_pred, average="binary", zero_division=0),
+        recall=recall_score(y_test, y_test_pred, average="binary", zero_division=0),
     )
+
     logger.debug("Model metrics on the test dataset: %s", test_metrics)
 
     logger.debug("Confusion matrix:")
     logger.debug(confusion_matrix(y_test, y_test_pred))
     logger.debug("Classification report:")
-    logger.debug(classification_report(y_test, y_test_pred))
+    logger.debug(classification_report(y_test, y_test_pred, zero_division=0))
 
     d1 = {f"{k}_train": v for k, v in train_metrics.model_dump().items()}
     d2 = {f"{k}_test": v for k, v in test_metrics.model_dump().items()}
@@ -158,17 +230,17 @@ def calculate_regression_metrics(
     """Compute Metrics on a Regression Model."""
     logger.info("Calculate regression metrics")
     train_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_train, y_train_pred),
-        rmse=np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        mae=mean_absolute_error(y_train, y_train_pred),
-        r2=r2_score(y_train, y_train_pred),
+        mse=float(mean_squared_error(y_train, y_train_pred)),
+        rmse=float(np.sqrt(mean_squared_error(y_train, y_train_pred))),
+        mae=float(mean_absolute_error(y_train, y_train_pred)),
+        r2=float(r2_score(y_train, y_train_pred)),
     )
     logger.debug("Train dataset metrics: %s", train_metrics)
     test_metrics = RegressionMetrics(
-        mse=mean_squared_error(y_test, y_test_pred),
-        rmse=np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        mae=mean_absolute_error(y_test, y_test_pred),
-        r2=r2_score(y_test, y_test_pred),
+        mse=float(mean_squared_error(y_test, y_test_pred)),
+        rmse=float(np.sqrt(mean_squared_error(y_test, y_test_pred))),
+        mae=float(mean_absolute_error(y_test, y_test_pred)),
+        r2=float(r2_score(y_test, y_test_pred)),
     )
     logger.debug("Test dataset metrics: %s", test_metrics)
 
@@ -222,7 +294,7 @@ def train_model(
     y_test_pred = model.predict(x_test_scaled)
 
     # Calculate metrics
-    if issubclass(type(model), ClassifierMixin):
+    if is_classifier(model):
         metrics = calculate_classification_metrics(
             model=model,
             x_train_scaled=x_train_scaled,
@@ -233,7 +305,7 @@ def train_model(
             y_test_pred=y_test_pred,
             logger=logger,
         )
-    elif issubclass(type(model), RegressorMixin):
+    elif is_regressor(model):
         metrics = calculate_regression_metrics(
             y_train=y_train,
             y_test=y_test,
@@ -275,8 +347,12 @@ def kfold_cross_validation(
     x = x_train
     y = y_train
 
-    # Initialize KFold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    # Initialize StratifiedKFold/KFold
+    first_model = next(iter(models.values()))
+    if is_classifier(first_model):
+        kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
+    if is_regressor(first_model):
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=SEED)
 
     # Dictionary to store scores
     mean_scores = {}
@@ -291,7 +367,7 @@ def kfold_cross_validation(
             x_scaled = x
 
         # Perform cross-validation
-        scoring = "roc_auc" if issubclass(type(model), ClassifierMixin) else "r2"
+        scoring = "roc_auc" if is_classifier(model) else "r2"
         scores = cross_val_score(
             model, x_scaled, y.values.ravel(), cv=kf, scoring=scoring
         )
@@ -322,27 +398,6 @@ def kfold_cross_validation(
         scaler_file=scaler_file,
         logger=logger,
     )
-
-
-def split_and_clean_data(
-    *, x: pd.DataFrame, y: pd.DataFrame, settings: TrainingSettings
-):
-    """Divide the dataset in training and test sets and remove outliers if enabled.
-
-    Remove outliers only from the train set.
-    """
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=settings.TEST_SIZE, random_state=SEED
-    )
-    if settings.REMOVE_OUTLIERS:
-        x_train, y_train = remove_outliers(
-            x_train,
-            y_train,
-            q1=settings.Q1_FACTOR,
-            q3=settings.Q3_FACTOR,
-            k=settings.THRESHOLD_FACTOR,
-        )
-    return x_train, x_test, y_train, y_test
 
 
 def training_phase(
@@ -512,6 +567,7 @@ def run(logger: Logger) -> None:
         features=settings.X_FEATURES + settings.Y_REGRESSION_FEATURES,
         remove_outliers=settings.REMOVE_OUTLIERS,
         scaling=settings.SCALING_ENABLE,
+        scaler_file=settings.SCALER_FILE,
     )
     x_train_cleaned, x_test, y_train_cleaned, y_test = split_and_clean_data(
         x=df[settings.X_FEATURES],

@@ -12,8 +12,8 @@ from mlflow.pyfunc import PyFuncModel, load_model
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import RobustScaler
 
-from settings import load_mlflow_settings
-from training.models import MetaData
+from src.settings import load_mlflow_settings
+from src.training.models import MetaData
 
 
 def setup_mlflow(*, logger: Logger) -> mlflow.MlflowClient:
@@ -38,7 +38,7 @@ def setup_mlflow(*, logger: Logger) -> mlflow.MlflowClient:
         mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
         return mlflow.MlflowClient()
     except mlflow.exceptions.MlflowException as e:
-        logger.error(e.message)
+        logger.error(e)
         exit(1)
 
 
@@ -126,8 +126,10 @@ def get_model(*, model_uri: str) -> tuple[PyFuncModel, BaseEstimator]:
 
 
 def get_scaler(*, model_uri: str, scaler_file: str) -> RobustScaler:
-    """Return model's scaler"""
+    """Return model's scaler, raises exceptions on failure"""
     scaler_uri = f"{model_uri}/{scaler_file}"
     scaler_dict = mlflow.artifacts.load_dict(scaler_uri)
+    if "scaler" not in scaler_dict:
+        raise KeyError(f"'scaler' key not found in dict loaded from {scaler_uri}")
     scaler_bytes = base64.b64decode(scaler_dict["scaler"])
     return pickle.loads(scaler_bytes)

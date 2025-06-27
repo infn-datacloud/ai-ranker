@@ -3,7 +3,7 @@ from logging import Logger
 import numpy as np
 import pandas as pd
 
-from utils import (
+from src.utils import (
     MSG_CPU_QUOTA,
     MSG_CPU_REQ,
     MSG_CPU_USAGE,

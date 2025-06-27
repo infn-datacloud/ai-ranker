@@ -13,7 +13,7 @@ pipeline {
     }
 
     environment {
-        PROJECT_NAME = 'ai-ranker-training'
+        PROJECT_NAME = 'ai-ranker'
         DOCKERFILE = './Dockerfile'
 
         DOCKER_HUB_CREDENTIALS_NAME = 'docker-hub-credentials'

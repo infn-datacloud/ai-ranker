@@ -1,7 +1,7 @@
 from logging import Logger
 from typing import Any
 
-from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+from pydantic import AnyHttpUrl, ConfigDict, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
@@ -10,6 +10,10 @@ from sklearn.utils import all_estimators
 class MLFlowSettings(BaseSettings):
     """Definition of environment variables related to the MLFlow configuration."""
 
+    model_config = ConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
     MLFLOW_TRACKING_URI: AnyHttpUrl = Field(
         default="http://localhost:5000", description="MLFlow tracking URI."
     )
@@ -17,30 +21,29 @@ class MLFlowSettings(BaseSettings):
         default="Default", description="Name of the MLFlow experiment."
     )
     MLFLOW_HTTP_REQUEST_TIMEOUT: int = Field(
-        default=20, decription="Timeout in seconds for MLflow HTTP requests"
+        default=20, description="Timeout in seconds for MLflow HTTP requests"
     )
     MLFLOW_HTTP_REQUEST_MAX_RETRIES: int = Field(
         default=5,
-        decription="Specifies the maximum number of retries with exponential backoff "
+        description="Specifies the maximum number of retries with exponential backoff "
         "for MLflow HTTP requests ",
     )
     MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR: int = Field(
         default=2,
-        decription="Specifies the backoff increase factor between MLflow HTTP request",
+        description="Specifies the backoff increase factor between MLflow HTTP request",
     )
     MLFLOW_HTTP_REQUEST_BACKOFF_JITTER: float = Field(
         default=1.0,
-        decription="Specifies the backoff jitter between MLflow HTTP request failures",
+        description="Specifies the backoff jitter between MLflow HTTP request failures",
     )
-
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 class CommonSettings(BaseSettings):
     """Common settings"""
+
+    model_config = ConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     LOCAL_MODE: bool = Field(
         default=False, description="Perform the training using local dataset"
@@ -74,23 +77,20 @@ class CommonSettings(BaseSettings):
     )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
-        default_factory=list, decription="List of complex template"
+        default_factory=list, description="List of complex template"
     )
-
-    class Config:
-        env_file = ".env"  # Set variables from env files
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 class TrainingSettings(CommonSettings):
     """Definition of environment variables related to the Training script."""
 
     CLASSIFICATION_MODELS: dict[str, ClassifierMixin] = Field(
+        default={"RandomForestClassifier": {}},
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
     REGRESSION_MODELS: dict[str, RegressorMixin] = Field(
+        default={"RandomForestRegressor": {}},
         description="Pass a dict as a JSON string. The key is the model name. "
         "The value is a dict with the corresponding parameters",
     )
@@ -110,12 +110,30 @@ class TrainingSettings(CommonSettings):
     THRESHOLD_FACTOR: float = Field(
         default=1.5, description="Multiplication factor for outlier threshold"
     )
-    X_FEATURES: list = Field(description="List of features to use as X")
+    X_FEATURES: list = Field(
+        default=[
+            "cpu_diff",
+            "ram_diff",
+            "storage_diff",
+            "instances_diff",
+            "floatingips_diff",
+            "gpu",
+            "test_failure_perc_30d",
+            "overbooking_ram",
+            "avg_success_time",
+            "avg_failure_time",
+            "failure_percentage",
+            "complexity",
+        ],
+        description="List of features to use as X",
+    )
     Y_CLASSIFICATION_FEATURES: list = Field(
-        description="List of features to use as Y for classification"
+        default=["status"],
+        description="List of features to use as Y for classification",
     )
     Y_REGRESSION_FEATURES: list = Field(
-        description="List of features to use as Y for regression"
+        default=["deployment_time"],
+        description="List of features to use as Y for regression",
     )
 
     SCALING_ENABLE: bool = Field(
@@ -160,17 +178,17 @@ class TrainingSettings(CommonSettings):
 
         for model_name, model_params in value.items():
             # Get the class of the model
-            model_class = estimators.get(model_name, None)
+            found_class = estimators.get(model_name, None)
 
-            if model_class is None:
+            if found_class is None:
                 raise ValueError(f"Model {model_name} not found")
 
             # Verify that the model belongs to the correct class
-            if not issubclass(model_class, model_class):
+            if not issubclass(found_class, model_class):
                 raise TypeError(f"The model {model_name} is not a {model_type} model")
 
             # Create the model object from the parameters
-            model = model_class(**model_params)
+            model = found_class(**model_params)
             models_dict[model_name] = model
 
         return models_dict
