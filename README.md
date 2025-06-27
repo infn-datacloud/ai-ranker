@@ -15,7 +15,7 @@ The typical usage pattern is as follows:
 
 ## Production deployment
 ### Requirements
-You need to have `docker` installed on your system and a running MLflow instance with version 2.17.0. The minimum and recommended resources to use the ai-ranker for training and inference are the following
+You need to have `docker` installed on your system, a running MLflow instance with version up to 2.22.1, and a running Kafka instance. The minimum and recommended resources to use the ai-ranker for training and inference are the following
 
 | Resource               | Minimum (dev/test)                             | Recommended (prod)                          | Notes                                                               |
 | ---------------------- | ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------- |
@@ -27,7 +27,7 @@ You need to have `docker` installed on your system and a running MLflow instance
 ### Start up the main service
 In production mode you should run the application using the dedicated image [indigopaas/ai-ranker](https://hub.docker.com/r/indigopaas/ai-ranker) available on DockerHub.
 
-The application does not requires persistent volumes. It uses environment variables to configure the service: the connection to the MLflow and Kafka instances, the models and features to use, whether to remove outliers, whether to scale the features, and which feature to use for classification and regression.
+The application does not require persistent volumes. It uses environment variables to configure the service: the connection to the MLflow and Kafka instances, the models and features to use, whether to remove outliers, whether to scale the features, and which feature to use for classification and regression.
 
 The command to correctly start up the application for training inside a container using the default environment variables is:
 
@@ -306,14 +306,14 @@ Below is the list of all environment variables that can be passed to the command
 To function correctly, the application requires running instances of both **MLflow** and **Kafka**.
 
 If you don’t already have them running, we recommend deploying them using the official Docker images:
-- [ghcr.io/mlflow/mlflow:v2.17.0](https://github.com/mlflow/mlflow/pkgs/container/mlflow/289930635?tag=v2.17.0)
+- [ghcr.io/mlflow/mlflow:v2.22.1](https://github.com/mlflow/mlflow/pkgs/container/mlflow/289930635?tag=v2.22.1)
 - [confluentinc/cp-kafka](https://hub.docker.com/r/confluentinc/cp-kafka)
 
 As said at the beginning, the Kafka instance is not mandatory, as messages can also be read from a local file, although this is intended for debugging purposes only.
 
 ### Job Scheduler
 As previously said you can use a container job scheduler to execute the ai-ranker training script contained in the docker image at fixed intervals.
-Here, we suggest to use ofelia and we provide an example configuration for a docker-compose.yaml
+Here, we suggest to use [ofelia](https://github.com/mcuadros/ofelia.git) and we provide an example configuration for a docker-compose.yaml.
 
 ````
 services:
@@ -326,7 +326,7 @@ services:
     command: bash -c "while true; do sleep 1; done"
     labels:
       ofelia.enabled: true
-      ofelia.job-exec.feed.schedule: "@every 1m"
+      ofelia.job-exec.feed.schedule: "@every 1h"
       ofelia.job-exec.feed.command: "python /app/src/main.py --training"
       ofelia.job-exec.feed.save-folder: /var/log
       ofelia.job-exec.feed.no-overlap: false
@@ -357,3 +357,34 @@ cd ai-ranker
 ### Setting up environment for local development
 Developers can launch the project locally or using containers.
 In both cases, developers need a MLflow service and a Kafka service. Both can be started using docker.
+An easy way to configure the environment is to use [poetry](https://python-poetry.org). Through poetry developers can install the libraries needed to start the python app and the tools to manage the code versioning, linting and formatting. We suggest to configure poetry to create the virtual environment inside the project folder to help VSCode environment discover (if you use it).
+
+````
+poetry config virtualenvs.in-project true
+poetry install
+````
+The previous commands should be execute just the first time. You shall run the install step again when downloading a newer version of the project.
+
+To activate the virtual environment you can run the following command:
+````
+source $(poetry env info -p)/bin/activate
+
+````
+
+### Start up the app
+To run the application in development mode for training and for inference you can use the following commands from the project top folder:
+````
+python src/main.py --training
+python src/main.py --inference
+````
+### Automatic tests
+Automatic tests have been implemented using [pytest](https://docs.pytest.org/en/stable/). To run the test suite with information about coverage you can run, from the project top folder, the following command:
+````
+pytest --cov=.
+````
+
+## Build the image
+A Jenkins file has been written to build and push a new docker image version on DockerHub with the name indigopaas/ai-ranker on each push or merge on the main branch. To have a local build on your PC you can run this command:
+````
+docker build -t indigopaas/ai-ranker .
+````
