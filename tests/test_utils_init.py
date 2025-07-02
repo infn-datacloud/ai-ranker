@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from src.exceptions import ConfigurationError
 from src.utils import (
     load_data_from_file,
     load_dataset_from_kafka_messages,
@@ -59,13 +60,13 @@ def test_load_local_dataset_invalid_extension(tmp_path):
     bad_file = tmp_path / "invalid.txt"
     bad_file.write_text("just text")
     logger = MagicMock()
-    with pytest.raises(ValueError, match="Unsupported file extension: .txt"):
+    with pytest.raises(ConfigurationError, match="Unsupported file extension: .txt"):
         load_local_dataset(filename=str(bad_file), dataset_version="v1", logger=logger)
 
 
 def test_load_local_dataset_invalid_version(csv_file):
     logger = MagicMock()
-    with pytest.raises(ValueError, match="Dataset version v999 not supported"):
+    with pytest.raises(ConfigurationError, match="Dataset version v999 not supported"):
         load_local_dataset(filename=csv_file, dataset_version="v999", logger=logger)
 
 
@@ -96,7 +97,7 @@ def test_load_dataset_from_kafka_invalid_keys():
             MagicMock(value={"version": "v1", "feature1": 1, "invalid_feature": 2}),
         ]
         logger = MagicMock()
-        with pytest.raises(AssertionError, match="Found invalid keys"):
+        with pytest.raises(ConfigurationError, match="Found invalid keys"):
             load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
 
@@ -112,7 +113,8 @@ def test_load_dataset_from_kafka_unsupported_version():
         ]
         logger = MagicMock()
         with pytest.raises(
-            ValueError, match="Message version unsupported_version not supported"
+            ConfigurationError,
+            match="Message version unsupported_version not supported",
         ):
             load_dataset_from_kafka_messages(consumer=consumer, logger=logger)
 
@@ -139,8 +141,7 @@ def test_write_data_to_file(tmp_path):
     file_path.write_text(json.dumps(initial_data))
 
     new_entry = {"x": 2}
-    logger = MagicMock()
-    write_data_to_file(filename=str(file_path), data=new_entry, logger=logger)
+    write_data_to_file(filename=str(file_path), data=new_entry)
 
     with open(file_path) as f:
         result = json.load(f)

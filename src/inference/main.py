@@ -334,8 +334,9 @@ def create_message(
                 data = {**values, **i}
                 break
         if data is None:
-            logger.error(f"No matching input_data entry for provider key '{provider}'")
-            raise ValueError(f"No matching input_data entry for provider key '{provider}'")
+            msg = f"No matching input_data entry for provider key '{provider}'"
+            logger.error(msg)
+            raise ValueError(msg)
         ranked_providers.append(data)
     message = {MSG_DEP_UUID: deployment_uuid, "ranked_providers": ranked_providers}
     logger.debug("Output message: %s", message)
