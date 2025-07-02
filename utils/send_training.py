@@ -5,9 +5,7 @@ from src.utils.kafka import create_kafka_producer
 
 logger = create_logger("Populate training", level="INFO")
 settings = load_training_settings(logger=logger)
-producer = create_kafka_producer(
-    kafka_server_url=settings.KAFKA_HOSTNAME, logger=logger
-)
+producer = create_kafka_producer(settings=settings, logger=logger)
 df = load_local_dataset(
     filename=settings.LOCAL_DATASET,
     dataset_version=settings.LOCAL_DATASET_VERSION,

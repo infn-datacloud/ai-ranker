@@ -5,9 +5,7 @@ from src.utils.kafka import create_kafka_producer
 
 logger = create_logger("Populate inference topic", level="INFO")
 settings = load_inference_settings(logger=logger)
-producer = create_kafka_producer(
-    kafka_server_url=settings.KAFKA_HOSTNAME, logger=logger
-)
+producer = create_kafka_producer(settings=settings, logger=logger)
 messages = load_data_from_file(filename=settings.LOCAL_IN_MESSAGES, logger=logger)
 for i, message in enumerate(messages):
     producer.send(settings.KAFKA_INFERENCE_TOPIC, message)
