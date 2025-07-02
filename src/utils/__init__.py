@@ -97,61 +97,134 @@ MSG_VALID_KEYS = {
 def load_local_dataset(
     *, filename: str, dataset_version: str, logger: Logger
 ) -> pd.DataFrame:
-    """Load a dataset from a local CSV or JSON file and validate columns."""
+    """Load a dataset from a local CSV or JSON file.
 
-    # Detect file extension
-    _, ext = os.path.splitext(filename)
-    ext = ext.lower()
+    Load the dataset, validate its columns, and return it as a pandas DataFrame.
 
-    # Create dataframe based of file type
-    if ext == ".csv":
-        df = pd.read_csv(filename)
-    elif ext == ".json":
-        with open(filename) as f:
-            data = json.load(f)
-        df = pd.DataFrame(data)
-    else:
-        raise ValueError(f"Unsupported file extension: {ext}")
+    Args:
+        filename (str): Path to the local dataset file (CSV or JSON).
+        dataset_version (str): The version of the dataset, used to validate expected
+            columns.
+        logger (Logger): Logger instance for logging information and debug messages.
 
-    # Check columns based on dataset version
-    msg_map = MSG_VALID_KEYS.get(dataset_version, None)
-    if msg_map is None:
-        raise ValueError(f"Dataset version {dataset_version} not supported")
+    Returns:
+        pd.DataFrame: The loaded and validated dataset.
 
-    invalid_keys = set(df.columns).difference(msg_map)
-    assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+    Raises:
+        ConfigurationError: If the file is not found, the file extension is unsupported,
+            the dataset version is not supported, or the columns are invalid.
 
-    logger.debug("Uploaded dataframe:")
-    logger.debug(df)
-    return df
+    """
+    try:
+        if filename is None:
+            raise ValueError("LOCAL_DATASET environment variable has not been set.")
+
+        # Detect file extension
+        _, ext = os.path.splitext(filename)
+        ext = ext.lower()
+
+        # Create dataframe based of file type
+        if ext == ".csv":
+            logger.info("Read data from CSV file: '%s'", filename)
+            df = pd.read_csv(filename)
+        elif ext == ".json":
+            logger.info("Read data from JSON file: '%s'", filename)
+            with open(filename) as f:
+                data = json.load(f)
+            df = pd.DataFrame(data)
+        else:
+            raise ValueError(f"Unsupported file extension: {ext}")
+
+        # Check columns based on dataset version
+        msg_map = MSG_VALID_KEYS.get(dataset_version, None)
+        if msg_map is None:
+            raise ValueError(f"Dataset version {dataset_version} not supported")
+
+        invalid_keys = set(df.columns).difference(msg_map)
+        assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+
+        logger.debug("Uploaded dataframe:")
+        logger.debug(df)
+        return df
+
+    except FileNotFoundError as e:
+        raise ConfigurationError(f"File '{filename}' not found") from e
+    except (ValueError, AssertionError) as e:
+        raise ConfigurationError(e.args[0]) from e
 
 
 def load_dataset_from_kafka_messages(
     *, consumer: KafkaConsumer, logger: Logger
 ) -> pd.DataFrame:
-    """Read kafka messages and create a dataset from them."""
-    messages = [message.value for message in consumer]
-    for message in messages:
-        msg_version = message.pop(MSG_VERSION)
-        msg_map = MSG_VALID_KEYS.get(msg_version, None)
-        if msg_map is None:
-            raise ValueError(f"Message version {msg_version} not supported")
+    """Read messages from a Kafka consumer and build DataFrame from them.
 
-        invalid_keys = set(message.keys()).difference(msg_map)
-        assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+    Reads messages, validates their structure based on versioned schemas, and constructs
+    a pandas DataFrame from the valid messages.
 
-    df = pd.DataFrame(messages)
-    logger.debug("Uploaded dataframe:")
-    logger.debug(df)
-    return df
+    Args:
+        consumer (KafkaConsumer): The Kafka consumer instance to read messages from.
+        logger (Logger): Logger instance for debug output.
+
+    Returns:
+        pd.DataFrame: DataFrame constructed from the validated Kafka messages.
+
+    Raises:
+        ConfigurationError: If a message has an unsupported version or contains invalid
+            keys.
+
+    """
+    try:
+        messages = [message.value for message in consumer]
+        for message in messages:
+            msg_version = message.pop(MSG_VERSION)
+            msg_map = MSG_VALID_KEYS.get(msg_version, None)
+            if msg_map is None:
+                raise ValueError(f"Message version {msg_version} not supported")
+
+            invalid_keys = set(message.keys()).difference(msg_map)
+            assert len(invalid_keys) == 0, f"Found invalid keys: {invalid_keys}"
+
+        df = pd.DataFrame(messages)
+        logger.debug("Uploaded dataframe:")
+        logger.debug(df)
+        return df
+
+    except (ValueError, AssertionError) as e:
+        raise ConfigurationError(e.args[0]) from e
 
 
 def load_data_from_file(*, filename: str | None, logger: Logger) -> list[dict]:
-    """Load local messages from a text file."""
-    with open(filename) as file:
-        data = json.load(file)
-    logger.debug("Loaded data: %s", data)
-    return data
+    """Load local messages from a JSON file.
+
+    Args:
+        filename (str | None): The path to the file containing the data. If None, an
+            error is raised.
+        logger (Logger): Logger instance for logging debug information.
+
+    Returns:
+        list[dict]: The data loaded from the file as a list of dictionaries.
+
+    Raises:
+        ConfigurationError: If the file is not found or if the filename is not provided.
+
+    """
+    try:
+        if filename is None:
+            raise ValueError(
+                "LOCAL_IN_MESSAGES or LOCAL_OUT_MESSAGES environment variable "
+                "have not been set."
+            )
+
+        with open(filename) as file:
+            data = json.load(file)
+
+        logger.debug("Loaded data: %s", data)
+        return data
+
+    except FileNotFoundError as e:
+        raise ConfigurationError(f"File '{filename}' not found") from e
+    except ValueError as e:
+        raise ConfigurationError(e.args[0]) from e
 
 
 def write_data_to_file(*, filename: str | None, data: dict[str, Any]) -> None:
@@ -173,8 +246,9 @@ def write_data_to_file(*, filename: str | None, data: dict[str, Any]) -> None:
     """
     try:
         if filename is None:
-            msg = "LOCAL_OUT_MESSAGES environment variable has not been set."
-            raise ValueError(msg)
+            raise ValueError(
+                "LOCAL_OUT_MESSAGES environment variable has not been set."
+            )
         with open(filename, "r+") as file:
             values = json.load(file)
             values.append(data)
@@ -182,8 +256,6 @@ def write_data_to_file(*, filename: str | None, data: dict[str, Any]) -> None:
             file.truncate()
             json.dump(values, file, indent=4)
     except FileNotFoundError as e:
-        msg = f"File '{filename}' not found"
-        raise ConfigurationError(msg) from e
+        raise ConfigurationError(f"File '{filename}' not found") from e
     except ValueError as e:
-        msg = e.args[0]
-        raise ConfigurationError(msg) from e
+        raise ConfigurationError(e.args[0]) from e

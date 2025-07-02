@@ -50,53 +50,94 @@ def add_ssl_parameters(
 
 def create_kafka_consumer(
     *,
-    kafka_server_url: str,
+    settings: InferenceSettings | TrainingSettings,
     topic: str,
+    client_id: str,
     partition: int | None = None,
     offset: int = 0,
     consumer_timeout_ms: int = 0,
     auto_offset_reset: str = "earliest",
     logger: Logger,
 ) -> KafkaConsumer:
-    """Create kafka consumer.
+    """Create a Kafka consumer instance with optional SSL and partition configurations.
 
-    By default, when starting up, read all messages from beginning.
-    It will be a service duty to discard already processed ones.
+    By default, the consumer reads all messages from the beginning of the topic.
+    SSL parameters are added if enabled in the settings. If a partition is specified,
+    the consumer is assigned to that partition and offset.
+
+    Args:
+        settings (InferenceSettings | TrainingSettings): Application settings containing
+            Kafka configuration.
+        topic (str): The Kafka topic to consume from.
+        client_id (str): Unique identifier for the Kafka client.
+        partition (int | None, optional): Specific partition to consume from. If None,
+            all partitions are used. Defaults to None.
+        offset (int, optional): Offset to start consuming from if a partition is
+            specified. Defaults to 0.
+        consumer_timeout_ms (int, optional): Timeout in milliseconds for the consumer to
+            wait for messages. Defaults to 0 (waits indefinitely).
+        auto_offset_reset (str, optional): Policy for resetting offsets ('earliest',
+            'latest', etc.). Defaults to "earliest".
+        logger (Logger): Logger instance for logging events.
+
+    Returns:
+        KafkaConsumer: Configured Kafka consumer instance.
+
+    Raises:
+        ConfigurationError: If Kafka broker is not available, SSL file is missing, or
+            configuration is invalid.
+
     """
     if consumer_timeout_ms == 0:
         consumer_timeout_ms = float("inf")
 
-    if partition is None:
-        consumer = KafkaConsumer(
-            topic,
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset=auto_offset_reset,
-            consumer_timeout_ms=consumer_timeout_ms,
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # Deserialize JSON
-        )
-        if consumer.bootstrap_connected():
-            logger.info("Subscribed to topics: %s", consumer.subscription())
+    kwargs = {
+        "client_id": client_id,
+        "bootstrap_servers": settings.KAFKA_HOSTNAME,
+        "value_deserializer": lambda x: json.loads(x.decode("utf-8")),
+        # "max_request_size": settings.KAFKA_MAX_REQUEST_SIZE,
+        # "acks": "all",
+        # "enable_idempotence": True,
+        # "allow_auto_create_topics": settings.KAFKA_ALLOW_AUTO_CREATE_TOPICS,
+        "consumer_timeout_ms": consumer_timeout_ms,
+        "auto_offset_reset": auto_offset_reset,
+        # enable_auto_commit=False, ?
+    }
 
-    else:
-        consumer = KafkaConsumer(
-            bootstrap_servers=kafka_server_url,
-            auto_offset_reset=auto_offset_reset,
-            consumer_timeout_ms=consumer_timeout_ms,
-            # enable_auto_commit=False,
-            value_deserializer=lambda x: json.loads(
-                x.decode("utf-8")
-            ),  # Deserialize JSON
-        )
-        tp = TopicPartition(topic, partition)
-        consumer.assign([tp])
-        consumer.seek(tp, offset)
+    try:
+        if settings.KAFKA_SSL_ENABLE:
+            logger.info("SSL enabled")
+            ssl_kwargs = add_ssl_parameters(settings=settings)
+            kwargs = {**kwargs, **ssl_kwargs}
+
+        if partition is None:
+            logger.info("No partition defined")
+            consumer = KafkaConsumer(topic, **kwargs)
+        else:
+            logger.info(
+                "Using partition '%d' and offset '%d' of topic '%s'",
+                partition,
+                offset,
+                topic,
+            )
+            consumer = KafkaConsumer(**kwargs)
+            tp = TopicPartition(topic, partition)
+            consumer.assign([tp])
+            consumer.seek(tp, offset)
+
         if consumer.bootstrap_connected():
             logger.info("Assigned topic: %s", consumer.assignment())
 
-    return consumer
+        return consumer
+    except NoBrokersAvailable as e:
+        msg = f"Kakfa Broker not found at given url: {settings.KAFKA_HOSTNAME}"
+        raise ConfigurationError(msg) from e
+    except FileNotFoundError as e:
+        msg = f"File '{settings.KAFKA_SSL_PASSWORD_PATH}' not found"
+        raise ConfigurationError(msg) from e
+    except ValueError as e:
+        msg = e.args[0]
+        raise ConfigurationError(msg) from e
 
 
 def create_kafka_producer(
@@ -134,7 +175,7 @@ def create_kafka_producer(
     try:
         if settings.KAFKA_SSL_ENABLE:
             logger.info("SSL enabled")
-            ssl_kwargs = add_ssl_parameters(settings=settings, logger=logger)
+            ssl_kwargs = add_ssl_parameters(settings=settings)
             kwargs = {**kwargs, **ssl_kwargs}
 
         return KafkaProducer(**kwargs)
