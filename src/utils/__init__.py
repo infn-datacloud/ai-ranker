@@ -6,6 +6,8 @@ from typing import Any
 import pandas as pd
 from kafka import KafkaConsumer
 
+from src.exceptions import ConfigurationError
+
 MSG_CPU_QUOTA = "vcpus_quota"
 MSG_CPU_USAGE = "vcpus_usage"
 MSG_CPU_REQ = "vcpus_requ"
@@ -152,14 +154,36 @@ def load_data_from_file(*, filename: str | None, logger: Logger) -> list[dict]:
     return data
 
 
-def write_data_to_file(
-    *, filename: str | None, data: dict[str, Any], logger: Logger
-) -> None:
-    """Write data to file."""
-    with open(filename, "r+") as file:
-        values = json.load(file)
-        values.append(data)
-        file.seek(0)
-        file.truncate()
-        json.dump(values, file, indent=4)
-    logger.info("Message written into %s", filename)
+def write_data_to_file(*, filename: str | None, data: dict[str, Any]) -> None:
+    """Write a dictionary of data to a specified JSON file.
+
+    If the file exists, the function loads its current contents (expected to be a list),
+    appends the new data, and writes the updated list back to the file. If the file does
+    not exist, a ConfigurationError is raised. If the filename is not provided, a
+    ConfigurationError is raised.
+
+    Args:
+        filename (str | None): The path to the file where data should be written.
+            Must not be None.
+        data (dict[str, Any]): The dictionary data to append to the file.
+
+    Raises:
+        ConfigurationError: If the file is not found or if the filename is None.
+
+    """
+    try:
+        if filename is None:
+            msg = "LOCAL_OUT_MESSAGES environment variable has not been set."
+            raise ValueError(msg)
+        with open(filename, "r+") as file:
+            values = json.load(file)
+            values.append(data)
+            file.seek(0)
+            file.truncate()
+            json.dump(values, file, indent=4)
+    except FileNotFoundError as e:
+        msg = f"File '{filename}' not found"
+        raise ConfigurationError(msg) from e
+    except ValueError as e:
+        msg = e.args[0]
+        raise ConfigurationError(msg) from e
