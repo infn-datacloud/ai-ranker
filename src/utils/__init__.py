@@ -30,7 +30,7 @@ MSG_GPU_REQ = "gpus_requ"
 MSG_STATUS = "status"
 MSG_STATUS_REASON = "status_reason"
 MSG_TEMPLATE_NAME = "template_name"
-MSG_DEP_COMPLETION_TIME = "completetion_time_s"
+MSG_DEP_COMPLETION_TIME = "completion_time_s"
 MSG_DEP_FAILED_TIME = "tot_failure_time_s"
 MSG_DEP_TOT_FAILURES = "n_failures"
 MSG_PROVIDER_NAME = "provider_name"
@@ -45,7 +45,6 @@ MSG_OVERBOOK_RAM = "overbooking_ram"
 MSG_OVERBOOK_CORES = "overbooking_cpu"
 MSG_BANDWIDTH_IN = "bandwidth_in"
 MSG_BANDWIDTH_OUT = "bandwidth_out"
-MSG_IMAGES = "images"
 MSG_USER_GROUP = "user_group"
 MSG_VERSION = "msg_version"
 
@@ -88,7 +87,6 @@ MSG_VALID_KEYS = {
         MSG_OVERBOOK_CORES,
         MSG_BANDWIDTH_IN,
         MSG_BANDWIDTH_OUT,
-        MSG_IMAGES,
         MSG_USER_GROUP,
     ]
 }
