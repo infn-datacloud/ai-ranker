@@ -20,7 +20,7 @@ from src.processing import (
     calculate_derived_properties,
     preprocessing,
 )
-from src.settings import InferenceSettings, load_inference_settings
+from src.settings import InferenceSettings, TrainingSettings, load_inference_settings
 from src.training.main import load_training_data
 from src.utils import (
     MSG_DEP_UUID,
@@ -478,7 +478,11 @@ def run(logger: Logger) -> None:
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
             try:
-                df = load_training_data(settings=settings, logger=logger)
+                train_settings = TrainingSettings.model_validate(settings)
+                train_settings.KAFKA_TRAINING_CLIENT_NAME = (
+                    settings.KAFKA_INFERENCE_CLIENT_NAME
+                )
+                df = load_training_data(settings=train_settings, logger=logger)
                 df = preprocessing(
                     df=df,
                     complex_templates=settings.TEMPLATE_COMPLEX_TYPES,
