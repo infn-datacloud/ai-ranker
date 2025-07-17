@@ -478,7 +478,7 @@ def run(logger: Logger) -> None:
         if len(data["providers"]) > 1:
             logger.info("Select between multiple providers")
             try:
-                train_settings = TrainingSettings.model_validate(settings)
+                train_settings = TrainingSettings(**settings.model_dump())
                 train_settings.KAFKA_TRAINING_CLIENT_NAME = (
                     settings.KAFKA_INFERENCE_CLIENT_NAME
                 )
