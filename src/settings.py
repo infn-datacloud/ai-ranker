@@ -1,8 +1,8 @@
 from logging import Logger
 from typing import Any
 
-from pydantic import AnyHttpUrl, ConfigDict, Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsError
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
 
@@ -10,7 +10,7 @@ from sklearn.utils import all_estimators
 class MLFlowSettings(BaseSettings):
     """Definition of environment variables related to the MLFlow configuration."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
@@ -41,7 +41,7 @@ class MLFlowSettings(BaseSettings):
 class CommonSettings(BaseSettings):
     """Common settings"""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
@@ -90,7 +90,7 @@ class CommonSettings(BaseSettings):
     KAFKA_SSL_KEY_PATH: str | None = Field(
         default=None, descrption="Path to the SSL Key file"
     )
-    KAFKA_SSL_PASSWORD_PATH: str | None = Field(
+    KAFKA_SSL_PASSWORD: str | None = Field(
         default=None, descrption="Path to the SSL password file"
     )
     KAFKA_ALLOW_AUTO_CREATE_TOPICS: bool = Field(

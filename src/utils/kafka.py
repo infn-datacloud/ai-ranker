@@ -27,23 +27,20 @@ def add_ssl_parameters(
         dict[str, Any]: A dictionary containing SSL configuration parameters for Kafka.
 
     Raises:
-        ValueError: If the KAFKA_SSL_PASSWORD_PATH is None when SSL is enabled.
-        FileNotFoundError: if the KAFKA_SSL_PASSWORD_PATH does not exist.
+        ValueError: If the KAFKA_SSL_PASSWORD is None when SSL is enabled.
 
     """
-    if settings.KAFKA_SSL_PASSWORD_PATH is None:
+    if settings.KAFKA_SSL_PASSWORD is None:
         raise ValueError(
-            "KAFKA_SSL_PASSWORD_PATH can't be None when KAFKA_SSL_ENABLE is True"
+            "KAFKA_SSL_PASSWORD can't be None when KAFKA_SSL_ENABLE is True"
         )
-    with open(settings.KAFKA_SSL_PASSWORD_PATH) as reader:
-        ssl_password = reader.read()
     kwargs = {
         "security_protocol": "SSL",
         "ssl_check_hostname": False,
         "ssl_cafile": settings.KAFKA_SSL_CACERT_PATH,
         "ssl_certfile": settings.KAFKA_SSL_CERT_PATH,
         "ssl_keyfile": settings.KAFKA_SSL_KEY_PATH,
-        "ssl_password": ssl_password,
+        "ssl_password": settings.KAFKA_SSL_PASSWORD,
     }
     return kwargs
 
@@ -95,13 +92,13 @@ def create_kafka_consumer(
         "client_id": client_id,
         "bootstrap_servers": settings.KAFKA_HOSTNAME,
         "value_deserializer": lambda x: json.loads(x.decode("utf-8")),
-        # "max_request_size": settings.KAFKA_MAX_REQUEST_SIZE,
-        # "acks": "all",
-        # "enable_idempotence": True,
-        # "allow_auto_create_topics": settings.KAFKA_ALLOW_AUTO_CREATE_TOPICS,
+        "fetch_max_bytes": settings.KAFKA_MAX_REQUEST_SIZE,
         "consumer_timeout_ms": consumer_timeout_ms,
         "auto_offset_reset": auto_offset_reset,
-        # enable_auto_commit=False, ?
+        "enable_auto_commit": True,
+        "group_id": None,
+        # 'group_instance_id': None,
+        "max_poll_records": 1,
     }
 
     try:
@@ -131,9 +128,6 @@ def create_kafka_consumer(
         return consumer
     except NoBrokersAvailable as e:
         msg = f"Kakfa Broker not found at given url: {settings.KAFKA_HOSTNAME}"
-        raise ConfigurationError(msg) from e
-    except FileNotFoundError as e:
-        msg = f"File '{settings.KAFKA_SSL_PASSWORD_PATH}' not found"
         raise ConfigurationError(msg) from e
     except ValueError as e:
         msg = e.args[0]
@@ -182,9 +176,6 @@ def create_kafka_producer(
 
     except NoBrokersAvailable as e:
         msg = f"Kakfa Broker not found at given url: {settings.KAFKA_HOSTNAME}"
-        raise ConfigurationError(msg) from e
-    except FileNotFoundError as e:
-        msg = f"File '{settings.KAFKA_SSL_PASSWORD_PATH}' not found"
         raise ConfigurationError(msg) from e
     except ValueError as e:
         msg = e.args[0]
