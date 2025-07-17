@@ -893,18 +893,23 @@ files = [
 
 [[package]]
 name = "kafka-python"
-version = "2.0.2"
+version = "2.2.14"
 description = "Pure Python client for Apache Kafka"
 optional = false
 python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "kafka-python-2.0.2.tar.gz", hash = "sha256:04dfe7fea2b63726cd6f3e79a2d86e709d608d74406638c5da33a01d45a9d7e3"},
-    {file = "kafka_python-2.0.2-py2.py3-none-any.whl", hash = "sha256:2d92418c7cb1c298fa6c7f0fb3519b520d0d7526ac6cb7ae2a4fc65a51a94b6e"},
+    {file = "kafka_python-2.2.14-py2.py3-none-any.whl", hash = "sha256:ee089dd502efe18e4cfcc1237eefde7f80689a55bd021ac9d7b805ad847d42f6"},
+    {file = "kafka_python-2.2.14.tar.gz", hash = "sha256:5779d9c2f0af4b8e0ed952fee25506f5a5e30ba97cda1614f984eb8b2083e31d"},
 ]
 
 [package.extras]
+benchmarks = ["pyperf"]
 crc32c = ["crc32c"]
+lz4 = ["lz4"]
+snappy = ["python-snappy"]
+testing = ["mock ; python_version < \"3.3\"", "pytest", "pytest-mock", "pytest-timeout"]
+zstd = ["zstandard"]
 
 [[package]]
 name = "kiwisolver"
@@ -2728,4 +2733,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "7473be2e6968aa2043ed7c04cda3bc2430a87d4d4bcec9aa992b687494b696bc"
+content-hash = "6fdee39e6116fe87417a3214193d3143a1682ded118d3dcb75b660d1bd0d9f0e"
