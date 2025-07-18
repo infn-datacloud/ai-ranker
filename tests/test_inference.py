@@ -8,6 +8,7 @@ import pytest
 from kafka.errors import NoBrokersAvailable
 from sklearn.preprocessing import RobustScaler
 
+from src.exceptions import ConfigurationError
 import src.inference.main as inference
 import src.utils.mlflow as mlflow_utils
 from src.inference.main import (
@@ -907,7 +908,12 @@ def test_create_message_no_match_raises():
     )
 
 
-@patch("src.inference.main.write_data_to_file")
+@patch(
+    "src.inference.main.write_data_to_file",
+    side_effect=ConfigurationError(
+        "LOCAL_OUT_MESSAGES environment variable has not been set."
+    ),
+)
 def test_send_message_local_mode_no_file(mock_write_data):
     logger = MagicMock()
     settings = MagicMock(
@@ -916,12 +922,8 @@ def test_send_message_local_mode_no_file(mock_write_data):
     )
     message = {"key": "value"}
 
-    send_message(message, settings, logger)
-
-    logger.error.assert_called_once_with(
-        "LOCAL_OUT_MESSAGES environment variable has not been set."
-    )
-    mock_write_data.assert_not_called()
+    with pytest.raises(ConfigurationError):
+        send_message(message, settings, logger)
 
 
 @patch("src.inference.main.write_data_to_file")
@@ -935,9 +937,7 @@ def test_send_message_local_mode_with_file(mock_write_data):
 
     send_message(message, settings, logger)
 
-    mock_write_data.assert_called_once_with(
-        filename="output.json", data=message, logger=logger
-    )
+    mock_write_data.assert_called_once_with(filename="output.json", data=message)
     logger.error.assert_not_called()
 
 
@@ -947,6 +947,7 @@ def test_send_message_kafka_mode(mock_create_producer):
     settings = MagicMock(
         LOCAL_MODE=False,
         KAFKA_HOSTNAME="kafka:9092",
+        KAFKA_INFERENCE_CLIENT_NAME="inference",
         KAFKA_RANKED_PROVIDERS_TOPIC="test-topic",
     )
     message = {"key": "value"}
@@ -956,9 +957,7 @@ def test_send_message_kafka_mode(mock_create_producer):
 
     send_message(message, settings, logger)
 
-    mock_create_producer.assert_called_once_with(
-        kafka_server_url="kafka:9092", logger=logger
-    )
+    mock_create_producer.assert_called_once_with(settings=settings, logger=logger)
     mock_producer.send.assert_called_once_with("test-topic", message)
     mock_producer.close.assert_called_once()
 
@@ -969,20 +968,20 @@ def test_send_message_kafka_mode(mock_create_producer):
     )
 
 
-@patch("src.inference.main.load_data_from_file")
+@patch(
+    "src.inference.main.load_data_from_file",
+    side_effect=ConfigurationError(
+        "LOCAL_IN_MESSAGES environment variable has not been set."
+    ),
+)
 def test_local_mode_no_in_messages(mock_load_data):
     logger = MagicMock()
     settings = MagicMock(
         LOCAL_MODE=True,
         LOCAL_IN_MESSAGES=None,
     )
-    with pytest.raises(SystemExit) as e:
+    with pytest.raises(ConfigurationError):
         connect_consumers_or_load_data(settings, logger)
-    logger.error.assert_called_once_with(
-        "LOCAL_IN_MESSAGES environment variable has not been set."
-    )
-    assert e.value.code == 1
-    mock_load_data.assert_not_called()
 
 
 @patch("src.inference.main.load_data_from_file")
@@ -993,13 +992,10 @@ def test_local_mode_file_not_found(mock_load_data):
         LOCAL_IN_MESSAGES="infile.json",
         LOCAL_OUT_MESSAGES="outfile.json",
     )
-    mock_load_data.side_effect = FileNotFoundError
+    mock_load_data.side_effect = ConfigurationError("File 'infile.json' not found")
 
-    with pytest.raises(SystemExit) as e:
+    with pytest.raises(ConfigurationError):
         connect_consumers_or_load_data(settings, logger)
-
-    logger.error.assert_called_once_with("File '%s' not found", "infile.json")
-    assert e.value.code == 1
 
 
 @patch("src.inference.main.load_data_from_file")
@@ -1027,6 +1023,7 @@ def test_kafka_mode_success(mock_create_consumer):
     settings = MagicMock(
         LOCAL_MODE=False,
         KAFKA_HOSTNAME="kafka:9092",
+        KAFKA_INFERENCE_CLIENT_NAME="inference-client",
         KAFKA_INFERENCE_TOPIC="input-topic",
         KAFKA_INFERENCE_TOPIC_TIMEOUT=1000,
         KAFKA_RANKED_PROVIDERS_TOPIC="output-topic",
@@ -1042,13 +1039,15 @@ def test_kafka_mode_success(mock_create_consumer):
     assert output_consumer == mock_output_consumer
 
     mock_create_consumer.assert_any_call(
-        kafka_server_url="kafka:9092",
+        settings=settings,
+        client_id="inference-client",
         topic="input-topic",
         consumer_timeout_ms=1000,
         logger=logger,
     )
     mock_create_consumer.assert_any_call(
-        kafka_server_url="kafka:9092",
+        settings=settings,
+        client_id="inference-client",
         topic="output-topic",
         consumer_timeout_ms=2000,
         logger=logger,
@@ -1061,20 +1060,18 @@ def test_kafka_mode_no_brokers(mock_create_consumer):
     settings = MagicMock(
         LOCAL_MODE=False,
         KAFKA_HOSTNAME="kafka:9092",
+        KAFKA_INFERENCE_CLIENT_NAME="inference-client",
         KAFKA_INFERENCE_TOPIC="input-topic",
         KAFKA_INFERENCE_TOPIC_TIMEOUT=1000,
         KAFKA_RANKED_PROVIDERS_TOPIC="output-topic",
         KAFKA_RANKED_PROVIDERS_TOPIC_TIMEOUT=2000,
     )
-    mock_create_consumer.side_effect = NoBrokersAvailable
-
-    with pytest.raises(SystemExit) as e:
-        connect_consumers_or_load_data(settings, logger)
-
-    logger.error.assert_called_once_with(
-        "Kakfa broker not found at given url: %s", "kafka:9092"
+    mock_create_consumer.side_effect = ConfigurationError(
+        "Kakfa broker not found at given url: kafka:9092"
     )
-    assert e.value.code == 1
+
+    with pytest.raises(ConfigurationError):
+        connect_consumers_or_load_data(settings, logger)
 
 
 @pytest.fixture
@@ -1328,13 +1325,13 @@ def test_multi_providers_path_executes(
 @pytest.mark.parametrize(
     "side_effect_exception, error_message",
     [
-        (FileNotFoundError("File 'dummy.csv' not found"), "File 'dummy.csv' not found"),
+        (ConfigurationError("File 'dummy.csv' not found"), "File 'dummy.csv' not found"),
         (
-            NoBrokersAvailable("Kakfa broker not found at given url: kafka-host"),
+            ConfigurationError("Kakfa broker not found at given url: kafka-host"),
             "Kakfa broker not found at given url: kafka-host",
         ),
-        (AssertionError("Test assertion"), "Test assertion"),
-        (ValueError("Test value error"), "Test value error"),
+        (ConfigurationError("Test assertion"), "Test assertion"),
+        (ConfigurationError("Test value error"), "Test value error"),
     ],
 )
 @patch("src.inference.main.load_inference_settings")

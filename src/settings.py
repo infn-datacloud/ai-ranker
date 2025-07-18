@@ -1,8 +1,8 @@
 from logging import Logger
 from typing import Any
 
-from pydantic import AnyHttpUrl, ConfigDict, Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsError
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 from sklearn.base import ClassifierMixin, RegressorMixin
 from sklearn.utils import all_estimators
 
@@ -10,7 +10,7 @@ from sklearn.utils import all_estimators
 class MLFlowSettings(BaseSettings):
     """Definition of environment variables related to the MLFlow configuration."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
@@ -41,7 +41,7 @@ class MLFlowSettings(BaseSettings):
 class CommonSettings(BaseSettings):
     """Common settings"""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
@@ -74,6 +74,28 @@ class CommonSettings(BaseSettings):
         default=1000,
         ge=0,
         description="Number of milliseconds to wait for a new message during iteration",
+    )
+    KAFKA_MAX_REQUEST_SIZE: int = Field(
+        default=104857600, description="Maximum size of a request to send to kafka (B)."
+    )
+    KAFKA_SSL_ENABLE: bool = Field(
+        default=False, description="Enable SSL connection with kafka"
+    )
+    KAFKA_SSL_CACERT_PATH: str | None = Field(
+        default=None, descrption="Path to the SSL CA cert file"
+    )
+    KAFKA_SSL_CERT_PATH: str | None = Field(
+        default=None, descrption="Path to the SSL cert file"
+    )
+    KAFKA_SSL_KEY_PATH: str | None = Field(
+        default=None, descrption="Path to the SSL Key file"
+    )
+    KAFKA_SSL_PASSWORD: str | None = Field(
+        default=None, descrption="Path to the SSL password file"
+    )
+    KAFKA_ALLOW_AUTO_CREATE_TOPICS: bool = Field(
+        default=False,
+        description="Enable automatic creation of new topics if not yet in kafka",
     )
 
     TEMPLATE_COMPLEX_TYPES: list = Field(
@@ -141,6 +163,10 @@ class TrainingSettings(CommonSettings):
     )
     SCALER_FILE: str = Field(
         default="scaler.pkl", description="Default file where store the scaler"
+    )
+    KAFKA_TRAINING_CLIENT_NAME: str = Field(
+        default="ai-ranker-training",
+        description="Client name to use when connecting to kafka",
     )
 
     @field_validator("CLASSIFICATION_MODELS", mode="before")
@@ -226,6 +252,11 @@ class InferenceSettings(CommonSettings):
         default=True,
         description="Sort providers based on how much the provider matches the "
         "requested resources.",
+    )
+
+    KAFKA_INFERENCE_CLIENT_NAME: str = Field(
+        default="ai-ranker-inference",
+        description="Client name to use when connecting to kafka",
     )
 
     KAFKA_INFERENCE_TOPIC: str = Field(

@@ -15,7 +15,6 @@ from src.utils import (
     MSG_DISK_REQ,
     MSG_DISK_USAGE,
     MSG_GPU_REQ,
-    MSG_IMAGES,
     MSG_INSTANCE_QUOTA,
     MSG_INSTANCE_REQ,
     MSG_INSTANCE_USAGE,
