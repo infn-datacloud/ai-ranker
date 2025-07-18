@@ -4,26 +4,28 @@ ARG POETRY_VERSION=1.8.3
 # Create requirements.txt from poetry dependencies
 FROM ghcr.io/withlogicco/poetry:${POETRY_VERSION}-python-${PYTHON_VERSION}-slim AS requirements
 
-WORKDIR /tmp
+ENV POETRY_VIRTUALENVS_CREATE=true
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
 
-COPY ./pyproject.toml ./poetry.lock* /tmp/
+COPY ./pyproject.toml ./poetry.lock* ./README.md /usr/src/app/
+COPY ./src/ /usr/src/app/src
 
-RUN poetry export \
-    -f requirements.txt \
-    --output requirements.txt \
-    --without-hashes \
-    --without dev
+RUN poetry install --without dev
 
 # Stage used in production
 FROM python:${PYTHON_VERSION}-slim AS production
 
 WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements.txt file and install dependencies
-COPY --from=requirements /tmp/requirements.txt /app/requirements.txt
+COPY --from=requirements /usr/src/app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
 
-RUN pip install --user --upgrade pip && \
-    pip install --user --no-cache-dir -r /app/requirements.txt
-
+COPY ./src/ ./src
 ENV PYTHONPATH=/app
-COPY src/ ./src
