@@ -247,7 +247,7 @@ def merge_and_sort_results(
     else:
         sort_func = sort_key
     sorted_results = dict(sorted(results.items(), key=sort_func, reverse=True))
-    logger.debug("Sorted results: %s", results)
+    logger.debug("Sorted results: %s", sorted_results)
     return sorted_results
 
 
