@@ -139,6 +139,8 @@ def regression_predict(
         # If expected_time < min_regression_time this value is a very good value.
         min_regression_time = input_data[provider][DF_MIN_DEP_TIME]
         max_regression_time = input_data[provider][DF_MAX_DEP_TIME]
+        # Avoid division by zero and negative values
+        # max_regression_time = min_regression_time when only one entry is present
         if max_regression_time > 0 and max_regression_time != min_regression_time:
             raw_val = 1 - (expected_time - min_regression_time) / (
                 max_regression_time - min_regression_time
