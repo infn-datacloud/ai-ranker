@@ -4,9 +4,6 @@
 CRON_SETTINGS = dockerRepository.periodicTrigger(env.BRANCH_NAME)
 
 pipeline {
-    triggers {
-        cron(CRON_SETTINGS)
-    }
 
     agent {
         node { label 'jenkins-node-label-1' }

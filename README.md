@@ -57,17 +57,17 @@ Below is the list of all environment variables that can be passed to the command
 - **LOCAL_DATASET_VERSION**
   - Type: `str`
   - Description: Target message version used to build the dataset
-  - Default: `1.1.0`
+  - Default: `"1.1.0"`
 
 - **KAFKA_HOSTNAME**
   - Type: `str`
   - Description: Kafka broker address
-  - Default: `localhost:9092`
+  - Default: `"localhost:9092"`
 
 - **KAFKA_TRAINING_TOPIC**
   - Type: `str`
   - Description: Kafka topic for training messages
-  - Default: `training`
+  - Default: `"training"`
 
 - **KAFKA_TRAINING_TOPIC_PARTITION**
   - Type: `int` or `null`
@@ -83,6 +83,41 @@ Below is the list of all environment variables that can be passed to the command
   - Type: `int`
   - Description: Milliseconds to wait for a message on the training topic
   - Default: `1000`
+
+- **KAFKA_MAX_REQUEST_SIZE**
+  - Type: `int`
+  - Description: Maximum size of a request to send to Kafka (in bytes)
+  - Default: `104857600`
+
+- **KAFKA_SSL_ENABLE**
+  - Type: `bool`
+  - Description: Enable SSL connection with Kafka
+  - Default: `false`
+
+- **KAFKA_SSL_CACERT_PATH**
+  - Type: `str` or `null`
+  - Description: Path to the CA certificate file for SSL
+  - Default: `null`
+
+- **KAFKA_SSL_CERT_PATH**
+  - Type: `str` or `null`
+  - Description: Path to the client certificate file for SSL
+  - Default: `null`
+
+- **KAFKA_SSL_KEY_PATH**
+  - Type: `str` or `null`
+  - Description: Path to the SSL key file
+  - Default: `null`
+
+- **KAFKA_SSL_PASSWORD**
+  - Type: `str` or `null`
+  - Description: Password for the SSL key file
+  - Default: `null`
+
+- **KAFKA_ALLOW_AUTO_CREATE_TOPICS**
+  - Type: `bool`
+  - Description: Enable automatic creation of new topics if not yet present in Kafka
+  - Default: `false`
 
 - **TEMPLATE_COMPLEX_TYPES**
   - Type: `list`
@@ -129,17 +164,17 @@ Below is the list of all environment variables that can be passed to the command
 
 - **CLASSIFICATION_MODELS**
   - Type: `dict[str, dict]`
-  - Description: JSON string of classifiers and their parameters
+  - Description: Pass a dict as a JSON string. The key is the model name. The value is a dict with the corresponding parameters
   - Default: `{"RandomForestClassifier": {}}`
 
 - **REGRESSION_MODELS**
   - Type: `dict[str, dict]`
-  - Description: JSON string of regressors and their parameters
+  - Description: Pass a dict as a JSON string. The key is the model name. The value is a dict with the corresponding parameters
   - Default: `{"RandomForestRegressor": {}}`
 
 - **KFOLDS**
   - Type: `int`
-  - Description: Number of folds for KFold cross-validation
+  - Description: Number of folds for the KFold cross validation
   - Default: `5`
 
 - **REMOVE_OUTLIERS**
@@ -167,10 +202,10 @@ Below is the list of all environment variables that can be passed to the command
   - Description: Multiplier for outlier threshold
   - Default: `1.5`
 
-- `X_FEATURES`
-  - **Description**: List of features to use as X
-  - **Type**: list
-  - **Default**:
+- **X_FEATURES**
+  - Type: `list`
+  - Description: List of features to use as X
+  - Default:
     ```json
     [
       "cpu_diff",
@@ -206,7 +241,13 @@ Below is the list of all environment variables that can be passed to the command
 - **SCALER_FILE**
   - Type: `str`
   - Description: Filename to store the scaler
-  - Default: `scaler.pkl`
+  - Default: `"scaler.pkl"`
+
+- **KAFKA_TRAINING_CLIENT_NAME**
+  - Type: `str`
+  - Description: Client name to use when connecting to Kafka
+  - Default: `"ai-ranker-training"`
+
 
 ---
 
@@ -215,12 +256,12 @@ Below is the list of all environment variables that can be passed to the command
 - **CLASSIFICATION_MODEL_NAME**
   - Type: `str`
   - Description: Name of the classification model to load
-  - Default: `RandomForestClassifier`
+  - Default: `"RandomForestClassifier"`
 
 - **CLASSIFICATION_MODEL_VERSION**
   - Type: `str`
   - Description: MLflow model version for classification
-  - Default: `latest`
+  - Default: `"latest"`
 
 - **CLASSIFICATION_WEIGHT**
   - Type: `float`
@@ -230,12 +271,12 @@ Below is the list of all environment variables that can be passed to the command
 - **REGRESSION_MODEL_NAME**
   - Type: `str`
   - Description: Name of the regression model to load
-  - Default: `RandomForestRegressor`
+  - Default: `"RandomForestRegressor"`
 
 - **REGRESSION_MODEL_VERSION**
   - Type: `str`
   - Description: MLflow model version for regression
-  - Default: `latest`
+  - Default: `"latest"`
 
 - **LOCAL_IN_MESSAGES**
   - Type: `str` or `null`
@@ -262,10 +303,15 @@ Below is the list of all environment variables that can be passed to the command
   - Description: Whether to sort providers by how closely they match requested resources
   - Default: `true`
 
+- **KAFKA_INFERENCE_CLIENT_NAME**
+  - Type: `str`
+  - Description: Client name to use when connecting to Kafka
+  - Default: `"ai-ranker-inference"`
+
 - **KAFKA_INFERENCE_TOPIC**
   - Type: `str`
   - Description: Kafka topic for inference input
-  - Default: `inference`
+  - Default: `"inference"`
 
 - **KAFKA_INFERENCE_TOPIC_PARTITION**
   - Type: `int` or `null`
@@ -285,7 +331,7 @@ Below is the list of all environment variables that can be passed to the command
 - **KAFKA_RANKED_PROVIDERS_TOPIC**
   - Type: `str`
   - Description: Kafka topic for ranked output
-  - Default: `ranked_providers`
+  - Default: `"ranked_providers"`
 
 - **KAFKA_RANKED_PROVIDERS_TOPIC_PARTITION**
   - Type: `int` or `null`

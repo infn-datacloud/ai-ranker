@@ -139,7 +139,9 @@ def regression_predict(
         # If expected_time < min_regression_time this value is a very good value.
         min_regression_time = input_data[provider][DF_MIN_DEP_TIME]
         max_regression_time = input_data[provider][DF_MAX_DEP_TIME]
-        if max_regression_time > 0:
+        # Avoid division by zero and negative values
+        # max_regression_time = min_regression_time when only one entry is present
+        if max_regression_time > 0 and max_regression_time != min_regression_time:
             raw_val = 1 - (expected_time - min_regression_time) / (
                 max_regression_time - min_regression_time
             )
@@ -247,7 +249,7 @@ def merge_and_sort_results(
     else:
         sort_func = sort_key
     sorted_results = dict(sorted(results.items(), key=sort_func, reverse=True))
-    logger.debug("Sorted results: %s", results)
+    logger.debug("Sorted results: %s", sorted_results)
     return sorted_results
 
 
