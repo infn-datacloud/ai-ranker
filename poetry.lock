@@ -1373,14 +1373,14 @@ dev = ["meson-python (>=0.13.1,<0.17.0)", "pybind11 (>=2.13.2,!=2.13.3)", "setup
 
 [[package]]
 name = "mlflow"
-version = "2.22.1"
+version = "2.22.2"
 description = "MLflow is an open source platform for the complete machine learning lifecycle"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "mlflow-2.22.1-py3-none-any.whl", hash = "sha256:d9702186ba15e4537bd49364adc6256f3ccc03b00b79fcef4e3fda231eaf98b8"},
-    {file = "mlflow-2.22.1.tar.gz", hash = "sha256:b7d6cb294112115cb0031a554629a21647c38ba88d0fd7455e0ddead02b4bb28"},
+    {file = "mlflow-2.22.2-py3-none-any.whl", hash = "sha256:9ec973acaba48a259cea2559260450e91f5f6b09849e3342e0c1d1624fe48ab1"},
+    {file = "mlflow-2.22.2.tar.gz", hash = "sha256:ca1a5b32369a8b03ee2d2dd4250c1908a3174184bea4159595de370e380e6ebe"},
 ]
 
 [package.dependencies]
@@ -1395,7 +1395,7 @@ Jinja2 = [
 ]
 markdown = ">=3.3,<4"
 matplotlib = "<4"
-mlflow-skinny = "2.22.1"
+mlflow-skinny = "2.22.2"
 numpy = "<3"
 pandas = "<2.3.0 || >2.3.0,<3"
 pyarrow = ">=4.0.0,<20"
@@ -1419,14 +1419,14 @@ xethub = ["mlflow-xethub"]
 
 [[package]]
 name = "mlflow-skinny"
-version = "2.22.1"
+version = "2.22.2"
 description = "MLflow is an open source platform for the complete machine learning lifecycle"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "mlflow_skinny-2.22.1-py3-none-any.whl", hash = "sha256:3b3f9a17a4b9e60c7683b3458909aff15f3c6f5dc898a6cec13a6efb939e7e79"},
-    {file = "mlflow_skinny-2.22.1.tar.gz", hash = "sha256:d9d4ae77288a3f216aed3c4e6607607baadcb2fd7d299adee6227358f662048d"},
+    {file = "mlflow_skinny-2.22.2-py3-none-any.whl", hash = "sha256:fefbe81d63a42daf0aba79678c37f3d1d0d8124a506df3c8bd248fa889fd61ba"},
+    {file = "mlflow_skinny-2.22.2.tar.gz", hash = "sha256:573e990ea5c572fb0d90cbbc77e5a1bf40b13bde9856685767b93c71c3d72a41"},
 ]
 
 [package.dependencies]
@@ -2951,4 +2951,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "3bf7d971ab1fa70a12bec796f2fecc84ea69034e90575ca8281ec4170be0ea88"
+content-hash = "00e87e481a58e3e035b0b88bdd52673a24db0d8f096e4737d07a243bb541c770"
