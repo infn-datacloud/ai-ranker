@@ -9,7 +9,7 @@ pipeline {
 
     environment {
         PROJECT_NAME = 'ai-ranker'
-        DOCKERFILE = './Dockerfile'
+        DOCKERFILE = './docker/Dockerfile'
     }
 
     triggers {
